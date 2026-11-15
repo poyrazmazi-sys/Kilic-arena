@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { fetchBin } from './bin';
 
-export type Kind = 'spear' | 'crossbow' | 'sniper' | 'captain';
+export type Kind = 'spear' | 'crossbow' | 'sniper' | 'captain' | 'player';
 const M = (c: number, r = 0.85, m = 0) => new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: m });
 const plate = M(0xa8acb0, 0.28, 1), wood = M(0x4a3420, 0.7);
 const box = (w: number, h: number, d: number, m: THREE.Material) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.castShadow = true; return b; };
@@ -33,7 +33,7 @@ export class Enemy {
   constructor(public kind: Kind, pos: THREE.Vector3, diffHp: number) {
     const cap = kind === 'captain';
     const model = cloneSkinned(proto); model.rotation.y = Math.PI;
-    const tint = cap ? 0xe8c070 : tints[Math.floor(Math.random() * tints.length)];
+    const tint = cap ? 0xe8c070 : kind === 'player' ? 0xff9a8a : tints[Math.floor(Math.random() * tints.length)];
     model.traverse((o) => {
       const m = o as THREE.Mesh; if (!m.isMesh) return;
       const src = m.material as THREE.MeshStandardMaterial, key = src.uuid + tint;
@@ -48,6 +48,7 @@ export class Enemy {
       const w = new THREE.Group(); w.scale.setScalar(100 / baseScale * 1); w.position.set(0, 9, 3);
       if (kind === 'spear') { const sh = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 2.3, 6), wood); sh.rotation.x = Math.PI / 2; sh.position.z = 0.35; const tip = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.24, 6), plate); tip.rotation.x = Math.PI / 2; tip.position.z = 1.6; sh.castShadow = true; w.add(sh, tip); }
       else if (cap) { const bl = box(0.012, 0.05, 1.1, plate); bl.position.z = 0.62; const gd = box(0.03, 0.24, 0.03, plate); gd.position.z = 0.08; w.add(bl, gd); }
+      else if (kind === 'player') { const gun = box(0.04, 0.09, 0.8, M(0x1c1c1c, 0.5, 0.8)); gun.position.z = 0.25; const st = box(0.04, 0.12, 0.25, wood); st.position.z = -0.2; w.add(gun, st); }
       else { const st = box(0.05, 0.05, 0.7, wood); st.position.z = 0.2; const bw = box(0.03, 0.7, 0.04, wood); bw.position.z = 0.5; w.add(st, bw); }
       hand.add(w);
     }
@@ -67,6 +68,10 @@ export class Enemy {
     a.reset(); a.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, Infinity); a.clampWhenFinished = once; a.enabled = true; a.setEffectiveWeight(1);
     if (prev && prev !== a) a.crossFadeFrom(prev, fade, false); a.play(); this.cur = name;
   }
+
+  ground = false;
+  /** Drives the model directly (used for the player's own third-person body). */
+  pose(name: string, timeScale: number, dt: number, once = false) { this.play(name, 0.15, once, timeScale); this.mixer.update(dt); }
 
   /** Ray hit test. Returns distance and whether it was a head shot. */
   hitTest(ray: THREE.Ray, maxDist: number): { d: number; head: boolean } | null {

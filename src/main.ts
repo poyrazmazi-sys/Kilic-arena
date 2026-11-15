@@ -14,13 +14,13 @@ import { t as tr, lang, setLang } from './i18n';
 const q = new URLSearchParams(location.search);
 const shot = q.has('shot');
 const mobile = /iPad|iPhone|Android/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.userAgent));
-const quality = Number(q.get('q') ?? 1); // 0 low, 1 medium, 2 high, 3 ultra
+const quality = Number(q.get('q') ?? (mobile ? 0 : 1)); // 0 low, 1 medium, 2 high, 3 ultra
 const statusEl = document.getElementById('status')!, overlay = document.getElementById('overlay')!, hint = document.getElementById('hint')!, statsEl = document.getElementById('stats')!;
 
 async function main() {
   const physics = new Phys();
   const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', stencil: false, depth: false, preserveDrawingBuffer: shot });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, [0.75, 1, 1.5, 2][quality]) * (mobile ? 0.75 : 1));
+  renderer.setPixelRatio(mobile ? Math.min(devicePixelRatio, 1.5) : Math.min(devicePixelRatio, [0.75, 1, 1.5, 2][quality]));
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.NoToneMapping;
@@ -114,12 +114,15 @@ async function main() {
   if (mobile) {
     el('touch').style.display = 'block'; let moveId = -1, lookId = -1, mx = 0, my = 0, lx = 0, ly = 0;
     const cv = renderer.domElement;
-    cv.addEventListener('touchstart', (e) => { e.preventDefault(); for (const tc of Array.from(e.changedTouches)) { if (tc.clientX < innerWidth * 0.4 && moveId < 0) { moveId = tc.identifier; mx = tc.clientX; my = tc.clientY; } else if (lookId < 0) { lookId = tc.identifier; lx = tc.clientX; ly = tc.clientY; } } }, { passive: false });
-    cv.addEventListener('touchmove', (e) => { e.preventDefault(); for (const tc of Array.from(e.changedTouches)) { if (tc.identifier === moveId) player.stick.set((tc.clientX - mx) / 60, (tc.clientY - my) / 60).clampLength(0, 1); if (tc.identifier === lookId) { player.look((tc.clientX - lx) * 2.2, (tc.clientY - ly) * 2.2); lx = tc.clientX; ly = tc.clientY; } } }, { passive: false });
-    const end = (e: TouchEvent) => { for (const tc of Array.from(e.changedTouches)) { if (tc.identifier === moveId) { moveId = -1; player.stick.set(0, 0); } if (tc.identifier === lookId) lookId = -1; } };
+    cv.addEventListener('touchstart', (e) => { e.preventDefault(); for (const tc of Array.from(e.changedTouches)) { if (tc.clientX < innerWidth * 0.45 && moveId < 0) { moveId = tc.identifier; mx = tc.clientX; my = tc.clientY; const k = el('knob'); k.style.display = 'block'; k.style.left = `${mx - 55}px`; k.style.top = `${my - 55}px`; } else if (lookId < 0) { lookId = tc.identifier; lx = tc.clientX; ly = tc.clientY; } } }, { passive: false });
+    cv.addEventListener('touchmove', (e) => { e.preventDefault(); for (const tc of Array.from(e.changedTouches)) { if (tc.identifier === moveId) { player.stick.set((tc.clientX - mx) / 55, (tc.clientY - my) / 55).clampLength(0, 1); (el('knob').firstElementChild as HTMLElement).style.transform = `translate(${player.stick.x * 34}px,${player.stick.y * 34}px)`; } if (tc.identifier === lookId) { player.look((tc.clientX - lx) * 4.2, (tc.clientY - ly) * 3.4); lx = tc.clientX; ly = tc.clientY; } } }, { passive: false });
+    const end = (e: TouchEvent) => { for (const tc of Array.from(e.changedTouches)) { if (tc.identifier === moveId) { moveId = -1; player.stick.set(0, 0); el('knob').style.display = 'none'; } if (tc.identifier === lookId) lookId = -1; } };
     cv.addEventListener('touchend', end); cv.addEventListener('touchcancel', end);
-    const btn = (id: string, down: () => void, up?: () => void) => { const b = el(id); b.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); if (game.state === 'dead' && game.stateT > 1.2) game.revive(); else down(); }, { passive: false }); if (up) b.addEventListener('touchend', (e) => { e.preventDefault(); up(); }); };
-    btn('tFire', () => game.primary()); btn('tAim', () => game.setAim(true), () => game.setAim(false)); btn('tReload', () => game.startReload()); btn('tSwap', () => game.swap()); btn('tJump', () => { player.jumpQueued = true; });
+    const btn = (id: string, down: () => void, up?: () => void) => { const b = el(id); let bx = 0, by = 0;
+      b.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); bx = e.changedTouches[0].clientX; by = e.changedTouches[0].clientY; if (game.state === 'dead' && game.stateT > 1.2) game.revive(); else down(); }, { passive: false });
+      b.addEventListener('touchmove', (e) => { e.preventDefault(); e.stopPropagation(); const tc = e.changedTouches[0]; player.look((tc.clientX - bx) * 4.2, (tc.clientY - by) * 3.4); bx = tc.clientX; by = tc.clientY; }, { passive: false });
+      b.addEventListener('touchend', (e) => { e.preventDefault(); up?.(); }); b.addEventListener('touchcancel', () => up?.()); };
+    btn('tFire', () => game.setFire(true), () => game.setFire(false)); btn('tView', () => game.toggleView()); btn('tAim', () => game.setAim(true), () => game.setAim(false)); btn('tReload', () => game.startReload()); btn('tSwap', () => game.swap()); btn('tJump', () => { player.jumpQueued = true; });
     addEventListener('touchstart', () => { if (game.state === 'dead' && game.stateT > 1.2) game.revive(); });
   }
 
@@ -146,7 +149,7 @@ async function main() {
     sun.target.position.copy(camera.position); sun.position.copy(camera.position).addScaledVector(sunDir, 300);
     composer.render(dt);
     frames++; ft += dt; if (ft > 0.5) { const now = performance.now(); const fps = frames / ((now - realT) / 1000); statsEl.textContent = `${Math.round(fps)} fps`; realT = now;
-      if (!shot && t > 6) { slow = fps < 52 ? slow + 1 : 0; if (slow >= 3 && scale > 0.45) { scale *= 0.82; slow = 0; renderer.setPixelRatio(basePR * scale); composer.setSize(innerWidth, innerHeight); } } frames = 0; ft = 0; (window as any).__ready = t > 1.5; }
+      if (!shot && t > 6) { slow = fps < 52 ? slow + 1 : 0; if (slow >= 3 && scale > (mobile ? 0.72 : 0.45)) { scale *= 0.82; slow = 0; renderer.setPixelRatio(basePR * scale); composer.setSize(innerWidth, innerHeight); } } frames = 0; ft = 0; (window as any).__ready = t > 1.5; }
     requestAnimationFrame(frame);
   }
   frame();

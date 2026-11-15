@@ -8,6 +8,7 @@ const run = async (label, query, steps) => {
   await page.waitForFunction(() => typeof window.__sim === 'function' && window.__ready === true, null, { timeout: 240000 });
   for (const [secs, fire] of steps) console.log(label, secs, JSON.stringify(await page.evaluate(([s, f]) => window.__sim(s, f), [secs, fire])));
 };
-await run('idle-tower', 'pos=-5.5,10.1,0&yaw=90', [[20, 0], [25, 0], [30, 0]]);
-await run('shoot-south', 'pos=0.5,8.1,20&yaw=180&pitch=0', [[25, 7.5], [40, 7.5]]);
+await run('idle-tower', 'pos=-5.5,10.1,0&yaw=90', [[20, 0]]);
+await run('ground', 'pos=-12,1.3,-30&yaw=0&pitch=0', [[14, 0.3], [20, 0.3]]);
+await run('camp', 'pos=-80,0.1,-30&yaw=0&pitch=0', [[14, 0.3]]);
 await browser.close();

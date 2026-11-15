@@ -55,7 +55,7 @@ export async function buildWorld(scene: THREE.Scene, physics: Phys, aniso: numbe
   const matsFor = (n: string) => { const ao = aoTex(n); return { stone: pbr('stone', aniso, ao), brick: pbr('brick', aniso, ao), floor: pbr('floor', aniso, ao), wood: pbr('wood', aniso, ao) } as Record<string, THREE.Material>; };
 
   const [hero, outer, inner] = await Promise.all(['outer_hero', 'outer', 'inner'].map((n) => fetchBin(`${import.meta.env.BASE_URL}models/${n}.json`).then((b) => loader.parseAsync(b, ''))));
-  const N = quality > 1 ? 7 : 4; // modules each side
+  const N = quality > 1 ? 7 : 5; // modules each side
 
   const place = (gltf: { scene: THREE.Group }, name: string, x: number, zs: number[], collideWithin: number) => {
     const mats = matsFor(name);
@@ -73,12 +73,27 @@ export async function buildWorld(scene: THREE.Scene, physics: Phys, aniso: numbe
   const outerZ: number[] = [], innerZ: number[] = [];
   for (let k = -N; k <= N; k++) { if (k !== 0) outerZ.push(k * 55); innerZ.push(k * 55 + 27.5); }
   place(hero, 'outer_hero', 0, [0], 999);
-  place(outer, 'outer', 0, outerZ, 60);
-  place(inner, 'inner', 24, innerZ, 90);
-  // play area limits on the walkway
-  [-52, 52].forEach((z) => physics.box(0, 10, z, 6, 4, 0.3));
-
-  physics.box(2.35, 10.5, 0, 0.2, 2.5, 52); // invisible rail above the low city-side parapet
+  place(outer, 'outer', 0, outerZ, 9999);
+  place(inner, 'inner', 24, innerZ, 9999);
+  // world bounds
+  const ZL = N * 55 + 20; physics.box(0, 20, -ZL, 600, 40, 1); physics.box(0, 20, ZL, 600, 40, 1); physics.box(-520, 20, 0, 1, 40, 600);
+  // wooden stairs and moat bridges so the whole area can be explored on foot
+  const stairM = pbr('wood', aniso);
+  const solid = (x0: number, x1: number, y0: number, y1: number, z0: number, z1: number) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0), stairM); m.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2); m.castShadow = m.receiveShadow = true; scene.add(m);
+    physics.box((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2, (x1 - x0) / 2, (y1 - y0) / 2, (z1 - z0) / 2);
+  };
+  const stairs = (x0: number, x1: number, zStart: number, dir: number, yBase: number, yTop: number) => {
+    const n = Math.ceil((yTop - yBase) / 0.2);
+    for (let i = 0; i < n; i++) { const za = zStart + dir * i * 0.5, zb = za + dir * 0.5; solid(x0, x1, yBase - 0.2, Math.min(yTop, yBase + (i + 1) * 0.2), Math.min(za, zb), Math.max(za, zb)); }
+    const ze = zStart + dir * n * 0.5; solid(x0, x1, yBase - 0.2, yTop, Math.min(ze, ze + dir * 2), Math.max(ze, ze + dir * 2));
+  };
+  for (const k of [-2, -1, 0, 1, 2]) {
+    stairs(2.5, 4.3, k * 55 + 10, 1, 2.6, 8.75);        // city side: up from between the walls
+    stairs(-4.4, -2.5, k * 55 + 9, 1, 1.2, 9.9);        // camp side: up from the terrace to the parapet
+    solid(-36, -20, 0.9, 1.2, k * 55 - 22, k * 55 - 19); // bridge over the moat
+    for (let i = 0; i < 4; i++) solid(-38.4 + i * 0.6, -37.8 + i * 0.6, -0.2, 0.3 + i * 0.3, k * 55 - 22, k * 55 - 19);
+  }
   // --- ground: camp plain, moat, terraces, city slope ---
   const mud = pbr('mud', aniso) as THREE.MeshStandardMaterial;
   const slab = (x0: number, x1: number, y: number, depth: number, collide = true, mat: THREE.Material = mud) => {
@@ -92,7 +107,7 @@ export async function buildWorld(scene: THREE.Scene, physics: Phys, aniso: numbe
   slab(-38, -20, -5, 3);                  // moat bed
   slab(-20, -2.4, 1.2, 9);                // terrace in front of the outer wall
   slab(2.4, 21.6, 2.6, 9);                // peribolos between the walls
-  physics.box(-68, -0.5, 0, 30, 0.5, 500);
+  physics.box(-469, -0.5, 0, 431, 0.5, 600);
   const water = new THREE.Mesh(new THREE.PlaneGeometry(18, 1000), new THREE.MeshStandardMaterial({ color: 0x1c2018, roughness: 0.08, metalness: 0.6 }));
   water.rotation.x = -Math.PI / 2; water.position.set(-29, -2.4, 0); scene.add(water);
   // city ground rising to the east
@@ -136,6 +151,7 @@ export async function buildWorld(scene: THREE.Scene, physics: Phys, aniso: numbe
   for (let i = 0; i < nt; i++) {
     const x = -125 - Math.pow(r(), 1.5) * 600, z = (r() - 0.5) * 1100, s = 1.2 + r() * r() * 2.2;
     d.position.set(x, 0, z); d.rotation.set(0, r() * 6, 0); d.scale.setScalar(s); d.updateMatrix(); tents.setMatrixAt(i, d.matrix);
+    if (x > -430) physics.box(x, 1.6 * s, z, 1.7 * s, 1.6 * s, 1.7 * s);
     const k = r(); col.set(k < 0.7 ? 0x8a8272 : k < 0.85 ? 0x70281c : k < 0.95 ? 0x34482f : 0x8a7438); tents.setColorAt(i, col);
   }
   tents.castShadow = true; scene.add(tents);
@@ -178,6 +194,7 @@ export async function buildWorld(scene: THREE.Scene, physics: Phys, aniso: numbe
   gun.add(barrel, breech);
   for (let i = 0; i < 5; i++) { const ring = new THREE.Mesh(new THREE.TorusGeometry(0.72 - i * 0.02, 0.07, 8, 24), bronze); ring.rotation.y = Math.PI / 2; ring.position.x = -1.2 + i * 1.2; gun.add(ring); }
   const bed = new THREE.Mesh(new THREE.BoxGeometry(9.5, 0.8, 2.6), woodM); bed.position.set(-0.6, -1.0, 0); gun.add(bed);
+  physics.box(bombard.x, 1, bombard.z, 4.5, 1.4, 1.6); physics.box(-330, 6, 40, 12, 6, 12);
   gun.position.copy(bombard); gun.rotation.z = 0.08; gun.rotation.y = 0.32; gun.traverse((o) => { o.castShadow = true; }); scene.add(gun);
   const flash = new THREE.PointLight(0xffa040, 0, 400, 1.5); flash.position.copy(bombard).add(new THREE.Vector3(6, 1, 2)); scene.add(flash);
 

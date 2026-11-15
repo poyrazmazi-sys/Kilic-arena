@@ -8,6 +8,7 @@ export class Player {
   private vy = 0; private grounded = false; private bob = 0;
   shake = 0; locked = false; noLock = false;
   stick = new THREE.Vector2(); jumpQueued = false; // touch input
+  third = true; moveSpeed = 0; eye = new THREE.Vector3();
 
   constructor(private phys: Phys, public camera: THREE.PerspectiveCamera, private dom: HTMLElement, start: THREE.Vector3) {
     this.feet.copy(start);
@@ -38,13 +39,18 @@ export class Player {
     this.jumpQueued = false;
     const res = this.phys.move(this.feet, 0.32, 1.75, new THREE.Vector3(dir.x * speed * dt, this.vy * dt, dir.z * speed * dt), this.grounded);
     this.grounded = res.grounded; if (res.ceiling) this.vy = 0;
-    const moving = this.grounded && dir.lengthSq() > 0.01 && speed > 0;
+    const moving = this.grounded && dir.lengthSq() > 0.01 && speed > 0; this.moveSpeed = dir.lengthSq() > 0.01 ? speed : 0;
     this.bob += moving ? dt * (sprint ? 11 : 7.5) : 0;
     const amp = moving ? (sprint ? 0.045 : 0.028) : 0;
     this.shake = Math.max(0, this.shake - dt * 1.6);
     const sh = this.shake * this.shake, t = this.feet;
-    this.camera.position.set(t.x + (Math.random() - 0.5) * sh * 0.25, t.y + 1.65 + Math.sin(this.bob * 2) * amp + (Math.random() - 0.5) * sh * 0.25, t.z);
-    this.camera.rotation.set(this.pitch + (Math.random() - 0.5) * sh * 0.03, this.yaw + Math.cos(this.bob) * amp * 0.12, (Math.random() - 0.5) * sh * 0.03, 'YXZ');
-    if (t.y < 7.2) this.teleport(new THREE.Vector3(0.5, 8.15, THREE.MathUtils.clamp(t.z, -45, 45))); // fell off the wall: put back on the walkway
+    this.eye.set(t.x, t.y + 1.65, t.z);
+    this.camera.rotation.set(this.pitch + (Math.random() - 0.5) * sh * 0.03, this.yaw + (this.third ? 0 : Math.cos(this.bob) * amp * 0.12), (Math.random() - 0.5) * sh * 0.03, 'YXZ');
+    if (this.third) {
+      const back = new THREE.Vector3(0.55, 0.25, 3.4).applyEuler(this.camera.rotation); const len = back.length(); back.normalize();
+      const hit = this.phys.ray(this.eye, back, len + 0.3); const d = hit ? Math.max(0.4, hit.timeOfImpact - 0.3) : len;
+      this.camera.position.copy(this.eye).addScaledVector(back, d);
+    } else this.camera.position.set(t.x + (Math.random() - 0.5) * sh * 0.25, t.y + 1.65 + Math.sin(this.bob * 2) * amp + (Math.random() - 0.5) * sh * 0.25, t.z);
+    if (t.y < -3.6) this.teleport(new THREE.Vector3(-12, 1.4, t.z)); // climbed out of the moat
   }
 }

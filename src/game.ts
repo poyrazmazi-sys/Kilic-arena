@@ -19,7 +19,7 @@ const WAVES: Spawn[][] = [
 ];
 const SNIPER_Z = [-13, 11, -3, 19];
 const RELOAD = 1.9, MAG = 30;
-const POINTS: [number, number, number][] = [[0.4, 8, -34], [-5.2, 10, 0], [0.4, 8, 34]];
+const POINTS: [number, number, number][] = [[-5.2, 10, 0], [-12, 1.2, -45], [12, 2.6, 50], [-104, 0, -38]];
 const lerp = THREE.MathUtils.lerp, damp = (a: number, b: number, l: number, dt: number) => lerp(a, b, 1 - Math.exp(-l * dt));
 
 interface Bolt { m: THREE.Mesh; v: THREE.Vector3; life: number; }
@@ -29,6 +29,7 @@ export class Game {
   diff = Number(load('diff') ?? 1);
   hp = 100; ammo = 150; mag = MAG; kills = 0; banners = 0; reloading = false;
   get loaded() { return this.mag > 0; }
+  private avatar!: Enemy; private avatarDead = false;
   private fireCd = 0; private bossSpawned = false; private crateT = 20; private crates: THREE.Group[] = [];
   private points: { g: THREE.Group; flag: THREE.Mesh; beam: THREE.Mesh; ring: THREE.Mesh; prog: number; done: boolean }[] = []; reloadT = 0; weapon: 0 | 1 = 0; switchT = 1; pending: 0 | 1 = 0;
   wave = 0; stateT = 0; lastHurt = 0; time = 0;
@@ -55,6 +56,8 @@ export class Game {
     });
     addEventListener('wheel', () => { if (player.active) this.switchTo(this.weapon ? 0 : 1); });
     this.kil.group.visible = false; this.hud();
+    this.avatar = new Enemy('player', player.position, 1); scene.add(this.avatar.root);
+    addEventListener('keydown', (e) => { if (e.code === 'KeyV') this.toggleView(); });
   }
 
   // ---------- flow ----------
@@ -69,11 +72,13 @@ export class Game {
     const boss = this.wave === 3; this.banner(boss ? t('boss') : `${t('wave')} ${this.wave + 1}`, '', 4); setMusic(true, this.wave + 1);
     this.say(boss ? 's_capt' : this.wave === 1 ? 's_cross' : this.wave === 2 ? 's_allah' : 's_come');
   }
-  revive() { if (this.state !== 'dead') return; this.resetWave(); $('death').style.opacity = '0'; this.state = 'fight'; this.spawnT = 2.5; this.player.teleport(new THREE.Vector3(0.6, 8.15, 3)); }
+  revive() { if (this.state !== 'dead') return; this.resetWave(); $('death').style.opacity = '0'; this.state = 'fight'; this.spawnT = 2.5; }
   private banner(a: string, b: string, dur: number) { $('banner').innerHTML = `<div class="b1">${a}</div><div class="rule"></div><div class="b2">${b}</div>`; $('banner').style.opacity = '1'; this.bannerT = dur; }
   private say(k: string) { $('sub').textContent = t(k); $('sub').style.opacity = '1'; this.subT = 4.5; }
 
   // ---------- weapons ----------
+  setFire(b: boolean) { this.fireHeld = b; if (b) this.primary(); }
+  toggleView() { this.player.third = !this.player.third; }
   setAim(b: boolean) { this.aimHeld = b; }
   swap() { this.switchTo(this.weapon ? 0 : 1); }
   switchTo(w: 0 | 1) { if (w === this.weapon && this.switchT >= 1) return; this.pending = w; if (this.switchT >= 1) this.switchT = 0; this.reloading = false; this.slashT = -1; }
@@ -87,7 +92,8 @@ export class Game {
     this.mag--; this.fireCd = 0.092; this.recoil = Math.min(1, this.recoil + 0.4); this.player.pitch += 0.006; this.player.yaw += (Math.random() - 0.5) * 0.006; this.player.shake = Math.max(this.player.shake, 0.22); sfx.ak();
     const cam = this.camera, spread = lerp(0.03, 0.008, this.aim) * (0.5 + this.recoil);
     const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion); dir.x += (Math.random() - 0.5) * spread; dir.y += (Math.random() - 0.5) * spread; dir.normalize();
-    const origin = cam.position.clone(); const muzzle = this.arq.group.localToWorld(this.arq.muzzleLocal.clone());
+    const origin = cam.position.clone(); if (this.player.third) origin.addScaledVector(dir, cam.position.distanceTo(this.player.eye));
+    const muzzle = this.player.third ? this.player.eye.clone().add(new THREE.Vector3(0.25, -0.25, -0.9).applyAxisAngle(THREE.Object3D.DEFAULT_UP, this.player.yaw)) : this.arq.group.localToWorld(this.arq.muzzleLocal.clone());
     const hit = this.physics.ray(origin, dir, 400);
     let maxD = hit ? hit.timeOfImpact : 400; let target: Enemy | null = null, head = false; const r = new THREE.Ray(origin, dir);
     for (const e of this.enemies) { const h = e.hitTest(r, maxD); if (h) { maxD = h.d; target = e; head = h.head; } }
@@ -105,24 +111,32 @@ export class Game {
   }
   private hurt(d: number, from: THREE.Vector3, melee: boolean) {
     if (this.state !== 'fight') return;
-    if (melee && this.blocking) { const f = new THREE.Vector3(0, 0, -1).applyAxisAngle(THREE.Object3D.DEFAULT_UP, this.player.yaw); const to = from.clone().sub(this.camera.position).setY(0).normalize(); if (f.dot(to) > 0.3) { sfx.clang(); this.player.shake = 0.3; this.recoil = 0.5; return; } }
+    if (melee && this.blocking) { const f = new THREE.Vector3(0, 0, -1).applyAxisAngle(THREE.Object3D.DEFAULT_UP, this.player.yaw); const to = from.clone().sub(this.player.eye).setY(0).normalize(); if (f.dot(to) > 0.3) { sfx.clang(); this.player.shake = 0.3; this.recoil = 0.5; return; } }
     this.hp -= d * DIFF[this.diff].dmg; this.lastHurt = this.time; sfx.hurt(); this.player.shake = Math.max(this.player.shake, 0.7); $('hurt').style.opacity = '0.9';
     if (this.hp <= 0) { this.hp = 0; this.state = 'dead'; this.player.enabled = false; $('death').style.opacity = '1'; $('deathText').textContent = t('dead'); setMusic(true, 0); }
   }
 
   // ---------- enemies ----------
   private spawn([kind, side]: Spawn) {
-    let pos: THREE.Vector3;
-    if (kind === 'sniper') pos = new THREE.Vector3(22.6, 13, SNIPER_Z[this.sniperI++ % 4]);
-    else pos = new THREE.Vector3(0.2 + Math.random() * 1.2, 8, side === 'N' ? -49 : 49);
-    const e = new Enemy(kind, pos, DIFF[this.diff].hp); (e as any).nav = 0; this.enemies.push(e); this.scene.add(e.root);
+    const p = this.player.position, sgn = side === 'N' ? -1 : 1; let pos: THREE.Vector3, ground = false;
+    const onWall = p.y > 7 && Math.abs(p.x) < 10;
+    if (kind === 'sniper') pos = new THREE.Vector3(22.6, 13, p.z + sgn * (8 + Math.random() * 14));
+    else if (onWall || kind === 'captain') pos = new THREE.Vector3(0.2 + Math.random() * 1.2, 8, p.z + sgn * (42 + Math.random() * 8));
+    else {
+      const [lo, hi] = p.x < -39 ? [-500, -42] : p.x < -2 ? [-18.5, -5] : [4.5, 20]; ground = true;
+      const x = THREE.MathUtils.clamp(p.x + (Math.random() - 0.5) * 16, lo, hi), z = p.z + sgn * (36 + Math.random() * 14);
+      const h = this.physics.ray(new THREE.Vector3(x, p.y + 4, z), new THREE.Vector3(0, -1, 0), 14); if (!h || h.timeOfImpact < 2.5) return;
+      pos = new THREE.Vector3(x, p.y + 4 - h.timeOfImpact, z);
+    }
+    const e = new Enemy(kind, pos, DIFF[this.diff].hp); (e as any).nav = 0; e.ground = ground; this.enemies.push(e); this.scene.add(e.root);
   }
   private stairY(z: number) { return 8 + THREE.MathUtils.clamp((9.3 - z) / 4.6, 0, 1) * 2; }
   private navTarget(e: Enemy, p: THREE.Vector3): THREE.Vector3 {
     const eUp = e.root.position.y > 9.6, pUp = p.y > 9.2, pos = e.root.position; const any = e as any;
-    const A = new THREE.Vector3(0.6, 8, 10.3), B = new THREE.Vector3(-1.55, 8, 9.6), C = new THREE.Vector3(-1.55, 10, 4.3), D = new THREE.Vector3(-3.2, 10, 3.0);
+    const oz = Math.round(p.z / 55) * 55; any.oz = oz; // stairs of the tower nearest the player
+    const A = new THREE.Vector3(0.6, 8, oz + 10.3), B = new THREE.Vector3(-1.55, 8, oz + 9.6), C = new THREE.Vector3(-1.55, 10, oz + 4.3), D = new THREE.Vector3(-3.2, 10, oz + 3.0);
     const near = (v: THREE.Vector3, r = 0.5) => Math.hypot(pos.x - v.x, pos.z - v.z) < r;
-    if (eUp === pUp && any.nav !== 2 && any.nav !== 12) { any.nav = 0; const tg = p.clone(); if (!eUp) { tg.y = 8; if (pos.z < 10.5 && pos.z > -5.5) tg.x = Math.max(tg.x, 0.2); } return tg; }
+    if (eUp === pUp && any.nav !== 2 && any.nav !== 12) { any.nav = 0; const tg = p.clone(); if (!eUp) { tg.y = 8; const rz = pos.z - Math.round(pos.z / 55) * 55; if (rz < 10.5 && rz > -5.5) tg.x = Math.max(tg.x, 0.2); tg.x = THREE.MathUtils.clamp(tg.x, -1, 1.9); } return tg; }
     if (!eUp || any.nav === 2) { // climbing to the tower
       if (pUp || any.nav === 2) {
         if (any.nav === 0) { if (near(A, 0.8)) any.nav = 1; return A; }
@@ -143,12 +157,14 @@ export class Game {
     const h = this.physics.ray(from, d, len); return !h || h.timeOfImpact > len - 0.4;
   }
   private updateEnemies(dt: number) {
-    const p = this.player.position, eye = this.camera.position, d = DIFF[this.diff];
+    const p = this.player.position, eye = this.player.eye, d = DIFF[this.diff];
     let alive = 0; const frozen = this.state === 'dead' || this.state === 'won';
     let attackers = 0; for (const e of this.enemies) if (!e.dead && (e.state === 'windup' || e.state === 'recover')) attackers++;
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const e = this.enemies[i];
       if (e.dead) { e.animate(dt, false); if (e.deadT > 13) { this.scene.remove(e.root); this.enemies.splice(i, 1); } continue; }
+      if (e.ground && (e.root.position.y < -2 || Math.hypot(e.root.position.x - p.x, e.root.position.z - p.z) > 110)) { this.scene.remove(e.root); this.enemies.splice(i, 1); continue; }
+      if (!e.ground && e.kind !== 'captain' && Math.abs(e.root.position.z - p.z) > 120) { this.scene.remove(e.root); this.enemies.splice(i, 1); continue; }
       alive++; if (frozen) { e.state = 'move'; e.animate(dt, false); continue; }
       e.stateT += dt; e.cooldown -= dt; const pos = e.root.position; let moving = false;
       const dx = p.x - pos.x, dz = p.z - pos.z, dist = Math.hypot(dx, dz), sameLevel = Math.abs(p.y - pos.y) < 1.2;
@@ -171,9 +187,10 @@ export class Game {
         } else if (dist < e.reach && sameLevel) { if (e.cooldown <= 0 && attackers < 2) { e.state = 'windup'; e.stateT = 0; attackers++; } }
         else moving = true;
         if (moving) {
-          const tg = this.navTarget(e, p); const mx = tg.x - pos.x, mz = tg.z - pos.z, ml = Math.hypot(mx, mz) || 1; const sp = e.speed * dt;
+          const tg = e.ground ? p : this.navTarget(e, p); const mx = tg.x - pos.x, mz = tg.z - pos.z, ml = Math.hypot(mx, mz) || 1; const sp = e.speed * dt;
           pos.x += (mx / ml) * sp; pos.z += (mz / ml) * sp; face = Math.atan2(-mx, -mz);
-          const nav = (e as any).nav; pos.y = (nav === 2 || nav === 12) ? this.stairY(pos.z) : nav === 3 || nav === 10 || nav === 11 ? 10 : (nav === 0 ? (pos.y > 9.6 ? 10 : 8) : 8);
+          if (e.ground) { const h = this.physics.ray(new THREE.Vector3(pos.x, pos.y + 1.4, pos.z), new THREE.Vector3(0, -1, 0), 8); if (h) pos.y = pos.y + 1.4 - h.timeOfImpact; }
+          else { const nav = (e as any).nav; pos.y = (nav === 2 || nav === 12) ? this.stairY(pos.z - ((e as any).oz ?? 0)) : nav === 3 || nav === 10 || nav === 11 ? 10 : (nav === 0 ? (pos.y > 9.6 ? 10 : 8) : 8); }
         }
       }
       if (dist < 1.3 && dist > 0.01 && sameLevel) { pos.x -= (dx / dist) * (1.3 - dist); pos.z -= (dz / dist) * (1.3 - dist); }
@@ -244,7 +261,9 @@ export class Game {
     const bar = $('objBar'); bar.style.opacity = label ? '1' : '0'; if (label) { (bar.firstElementChild as HTMLElement).style.width = `${frac * 100}%`; bar.dataset.label = label; }
   }
   private dropCrate() {
-    const z = (Math.random() < 0.5 ? -1 : 1) * (10 + Math.random() * 30), g = new THREE.Group(); g.userData.y = 8; g.position.set(0.4 + Math.random(), 30, z);
+    const p = this.player.position, x = p.x + (Math.random() - 0.5) * 6, z = p.z + (Math.random() < 0.5 ? -1 : 1) * (10 + Math.random() * 16);
+    const h = this.physics.ray(new THREE.Vector3(x, p.y + 3, z), new THREE.Vector3(0, -1, 0), 14); if (!h) return;
+    const g = new THREE.Group(); g.userData.y = p.y + 3 - h.timeOfImpact; g.position.set(x, g.userData.y + 25, z);
     const boxM = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.6, 0.6), new THREE.MeshStandardMaterial({ color: 0x5a3c22, roughness: 0.8 })); boxM.position.y = 0.3; boxM.castShadow = true;
     const band = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.08, 0.64), new THREE.MeshStandardMaterial({ color: 0xc09030, metalness: 1, roughness: 0.4 })); band.position.y = 0.42;
     const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 30, 10, 1, true), new THREE.MeshBasicMaterial({ color: new THREE.Color(0x40b0ff).multiplyScalar(2), transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })); beam.position.y = 15;
@@ -274,12 +293,19 @@ export class Game {
     if (this.slashT >= 0) {
       this.slashT += dt;
       if (!this.slashHit && this.slashT > 0.16) { this.slashHit = true; const f = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
-        for (const e of this.enemies) { if (e.dead) continue; const to = e.root.position.clone().setY(e.root.position.y + 1.2).sub(this.camera.position); const dd = to.length(); if (dd < 2.7 && to.normalize().dot(f) > 0.45) this.damageEnemy(e, e.kind === 'captain' ? 55 : 70, e.root.position.clone().setY(e.root.position.y + 1.3), f); } }
+        for (const e of this.enemies) { if (e.dead) continue; const to = e.root.position.clone().setY(e.root.position.y + 1.2).sub(this.player.eye); const dd = to.length(); if (dd < 2.9 && to.normalize().dot(f) > 0.35) this.damageEnemy(e, e.kind === 'captain' ? 55 : 70, e.root.position.clone().setY(e.root.position.y + 1.3), f); } }
       if (this.slashT > 0.5) { this.slashT = -1; if (this.fireHeld) this.primary(); }
     }
     this.recoil = damp(this.recoil, 0, 9, dt);
     this.flash.intensity = damp(this.flash.intensity, 0, 30, dt); if (this.flash.intensity < 20) this.flashSprite.visible = false;
 
+    // third-person body
+    const av = this.avatar, third = this.player.third; av.root.visible = third; this.vm.visible = !third;
+    if (third) {
+      av.root.position.copy(this.player.position); av.root.rotation.y = this.player.yaw;
+      if (this.state === 'dead') { if (!this.avatarDead) { this.avatarDead = true; av.pose('dying_1', 1.4, 0, true); } av.pose('dying_1', 1.4, dt, true); }
+      else { this.avatarDead = false; const ms = this.player.moveSpeed; if (ms > 0.5) av.pose('running', ms / 5.2, dt); else if (this.fireHeld || this.aimHeld || this.fireCd > -0.6) av.pose('rifle_aim_idle', 1, dt); else av.pose('idle', 1, dt); }
+    }
     // view model pose
     const sw = Math.sin(this.switchT * Math.PI), tt = this.time; const a = this.arq.group, s = this.kil.group;
     const bobX = Math.sin(tt * 1.3) * 0.004, bobY = Math.sin(tt * 1.9) * 0.004 - sw * 0.35;
@@ -307,7 +333,7 @@ export class Game {
     $('ammo').innerHTML = this.weapon === 0 ? `<b>${this.mag}</b><span> / ${this.ammo}</span>` : '<b>Kılıç</b>';
     const rl = $('reload'); rl.style.opacity = this.reloading ? '1' : '0'; if (this.reloading) { (rl.firstElementChild as HTMLElement).style.width = `${(this.reloadT / RELOAD) * 100}%`; rl.dataset.label = t('loading'); }
     const deg = ((-THREE.MathUtils.radToDeg(this.player.yaw)) % 360 + 360) % 360; ($('compass').firstElementChild as HTMLElement).style.transform = `translateX(${-deg * 2 - 720 + 90}px)`;
-    $('cross').style.opacity = this.weapon === 0 && this.aim < 0.5 && !this.reloading ? '0.7' : this.weapon === 1 ? '0.35' : '0';
+    $('cross').style.opacity = this.player.third ? '0.8' : this.weapon === 0 && this.aim < 0.5 && !this.reloading ? '0.7' : this.weapon === 1 ? '0.35' : '0';
     for (const id of ['hurt', 'hitmark', 'feed']) { const el = $(id); const o = Number(el.style.opacity || 0); if (o > 0) el.style.opacity = String(Math.max(0, o - dt * (id === 'hurt' ? 1.2 : id === 'feed' ? 0.7 : 5))); }
     if (this.hp < 35 && this.hp > 0) $('hurt').style.opacity = String(Math.max(Number($('hurt').style.opacity), 0.35 + Math.sin(this.time * 5) * 0.1));
     if (this.bannerT > 0) { this.bannerT -= dt; if (this.bannerT <= 0) $('banner').style.opacity = '0'; }

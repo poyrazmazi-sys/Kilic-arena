@@ -41,7 +41,9 @@ button.on{background:#8a6a2a;color:#1a1208}button#go{font-size:20px;padding:12px
 #win h1{font-weight:400;letter-spacing:.3em;color:#e2c275;font-size:clamp(26px,4.5vw,56px);margin:0;text-transform:uppercase}
 #touch{display:none;position:fixed;inset:0;z-index:3;pointer-events:none}
 #touch div{position:absolute;pointer-events:auto;width:74px;height:74px;border-radius:50%;border:1px solid #c9a24b;background:rgba(20,12,6,.35);color:#e2c275;display:flex;align-items:center;justify-content:center;font-size:12px;letter-spacing:.1em;-webkit-user-select:none;user-select:none}
-#tFire{right:36px;bottom:110px;width:96px!important;height:96px!important}#tAim{right:150px;bottom:70px}#tReload{right:40px;bottom:230px}#tSwap{right:140px;bottom:190px}#tJump{right:240px;bottom:40px}
+#tFire{right:36px;bottom:110px;width:104px!important;height:104px!important}#tView{right:40px;top:70px;width:60px!important;height:60px!important}
+#knob{display:none;position:fixed;width:110px;height:110px;border-radius:50%;border:1px solid rgba(226,194,117,.6);z-index:3;pointer-events:none}#knob div{position:absolute;left:33px;top:33px;width:44px;height:44px;border-radius:50%;background:rgba(226,194,117,.45)}
+html,body,canvas{touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;overscroll-behavior:none}#tAim{right:150px;bottom:70px}#tReload{right:40px;bottom:230px}#tSwap{right:140px;bottom:190px}#tJump{right:240px;bottom:40px}
 #obj{position:absolute;left:28px;top:20px;text-shadow:0 1px 5px #000;letter-spacing:.12em}
 #objText{font-size:17px;color:#e2c275;text-transform:uppercase}#objElims{font-size:13px;margin-top:4px;opacity:.9}
 #objBar{position:absolute;left:50%;top:34%;width:240px;height:6px;margin-left:-120px;background:rgba(10,6,3,.5);border:1px solid #c9a24b;opacity:0;transition:opacity .2s}
@@ -57,7 +59,7 @@ button.on{background:#8a6a2a;color:#1a1208}button#go{font-size:20px;padding:12px
 <div id="hud"><div id="hurt"></div><div id="compass"><div></div></div><div id="cross"></div><div id="hitmark"></div><div id="banner"></div><div id="sub"></div>
 <div id="obj"><div id="objText"></div><div id="objElims"></div></div><div id="objBar"><div></div></div><div id="feed"></div>
 <div id="reload"><div></div></div><div id="hp"><div></div></div><div id="ammo"></div></div>
-<div id="touch"><div id="tFire">FIRE</div><div id="tAim">AIM</div><div id="tReload">LOAD</div><div id="tSwap">SWAP</div><div id="tJump">JUMP</div></div>
+<div id="touch"><div id="tFire">FIRE</div><div id="tAim">AIM</div><div id="tReload">LOAD</div><div id="tSwap">SWAP</div><div id="tJump">JUMP</div><div id="tView">VIEW</div></div><div id="knob"><div></div></div>
 <div id="death"><div id="deathText"></div></div><div id="win"><div id="winText"></div></div>
 <div id="hint"></div><div id="stats"></div>
 <script type="module" src="/src/main.ts"></script>
