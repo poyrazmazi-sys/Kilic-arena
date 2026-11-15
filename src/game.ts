@@ -18,6 +18,7 @@ const WAVES: Spawn[][] = [
   [['captain', 'S'], ['spear', 'S'], ['spear', 'N'], ['sniper', 'W'], ['spear', 'N'], ['crossbow', 'S']],
 ];
 const SNIPER_Z = [-13, 11, -3, 19];
+const RELOAD = 4.6;
 const lerp = THREE.MathUtils.lerp, damp = (a: number, b: number, l: number, dt: number) => lerp(a, b, 1 - Math.exp(-l * dt));
 
 interface Bolt { m: THREE.Mesh; v: THREE.Vector3; life: number; }
@@ -206,13 +207,13 @@ export class Game {
     if (this.hp > 0 && this.hp < 100 && this.time - this.lastHurt > 6) this.hp = Math.min(this.diff === 2 ? 60 : 100, this.hp + 9 * dt);
 
     // weapon logic
-    if (this.switchT < 1) { const before = this.switchT; this.switchT = Math.min(1, this.switchT + dt / 0.4); if (before < 0.5 && this.switchT >= 0.5) { this.weapon = this.pending; this.arq.group.visible = this.weapon === 0; this.kil.group.visible = this.weapon === 1; } }
+    if (this.switchT < 1) { const before = this.switchT; this.switchT = Math.min(1, this.switchT + dt / 0.28); if (before < 0.5 && this.switchT >= 0.5) { this.weapon = this.pending; this.arq.group.visible = this.weapon === 0; this.kil.group.visible = this.weapon === 1; } }
     this.blocking = this.weapon === 1 && this.aimHeld && this.slashT < 0 && this.switchT >= 1;
     const wantAim = this.weapon === 0 && this.aimHeld && !this.reloading; this.aim = damp(this.aim, wantAim ? 1 : 0, 12, dt);
     this.player.speedMul = this.reloading ? 0.55 : this.aim > 0.5 || this.blocking ? 0.6 : 1; this.player.sens = lerp(1, 0.6, this.aim);
     const fov = lerp(72, 50, this.aim); if (Math.abs(this.camera.fov - fov) > 0.05) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
     if (this.reloading) {
-      this.reloadT += dt; const k = this.reloadT / 6.5;
+      this.reloadT += dt; const k = this.reloadT / RELOAD;
       const ramStage = Math.floor((k - 0.3) / 0.1); if (k > 0.3 && k < 0.7 && ramStage > this.ramI) { this.ramI = ramStage; sfx.ram(); }
       if (k >= 1) { this.reloading = false; this.loaded = true; this.ammo--; sfx.click(); }
     }
@@ -229,13 +230,13 @@ export class Game {
     const sw = Math.sin(this.switchT * Math.PI), tt = this.time; const a = this.arq.group, s = this.kil.group;
     const bobX = Math.sin(tt * 1.3) * 0.004, bobY = Math.sin(tt * 1.9) * 0.004 - sw * 0.35;
     if (this.weapon === 0) {
-      const rk = this.reloading ? Math.min(1, this.reloadT / 0.6) * Math.min(1, (6.5 - this.reloadT) / 0.6) : 0, e = rk * rk * (3 - 2 * rk);
+      const rk = this.reloading ? Math.min(1, this.reloadT / 0.6) * Math.min(1, (RELOAD - this.reloadT) / 0.6) : 0, e = rk * rk * (3 - 2 * rk);
       a.position.set(lerp(lerp(0.17, 0, this.aim), 0.06, e) + bobX, lerp(lerp(-0.15, -0.062, this.aim), -0.3, e) + bobY, lerp(-0.52, -0.42, this.aim) + this.recoil * 0.13 - e * 0.05);
       a.rotation.set(this.recoil * 0.22 + e * 1.05, lerp(0.05, 0, this.aim) + e * 0.45, -e * 0.35);
-      const k = this.reloadT / 6.5; let lz = -0.22, ly = -0.065;
+      const k = this.reloadT / RELOAD; let lz = -0.22, ly = -0.065;
       if (this.reloading && k > 0.12 && k < 0.88) { lz = k < 0.3 ? -0.8 : k < 0.7 ? -0.62 - Math.abs(Math.sin((k - 0.3) / 0.1 * Math.PI)) * 0.28 : lerp(-0.6, 0.12, (k - 0.7) / 0.18); ly = 0.03; }
       this.arq.left.position.z = damp(this.arq.left.position.z, lz, 14, dt); this.arq.left.position.y = damp(this.arq.left.position.y, ly, 14, dt);
-      this.arq.serp.rotation.x = this.loaded ? 0 : 0.9;
+      this.arq.serp.rotation.x = -Math.min(1, this.recoil * 1.6) * 0.75;
     } else {
       let px = 0.3, py = -0.3, pz = -0.5, rx = -0.5, ry = 0.2, rz = -0.35;
       if (this.blocking) { px = 0.12; py = -0.2; pz = -0.42; rx = -0.1; ry = 0.1; rz = 1.15; }
@@ -250,7 +251,7 @@ export class Game {
   private hud(dt = 0) {
     ($('hp').firstElementChild as HTMLElement).style.width = `${this.hp}%`;
     $('ammo').innerHTML = this.weapon === 0 ? `<b>${this.loaded ? 1 : 0}</b><span> / ${this.ammo}</span>` : '<b>Kılıç</b>';
-    const rl = $('reload'); rl.style.opacity = this.reloading ? '1' : '0'; if (this.reloading) { (rl.firstElementChild as HTMLElement).style.width = `${(this.reloadT / 6.5) * 100}%`; rl.dataset.label = t('loading'); }
+    const rl = $('reload'); rl.style.opacity = this.reloading ? '1' : '0'; if (this.reloading) { (rl.firstElementChild as HTMLElement).style.width = `${(this.reloadT / RELOAD) * 100}%`; rl.dataset.label = t('loading'); }
     const deg = ((-THREE.MathUtils.radToDeg(this.player.yaw)) % 360 + 360) % 360; ($('compass').firstElementChild as HTMLElement).style.transform = `translateX(${-deg * 2 - 720 + 90}px)`;
     $('cross').style.opacity = this.weapon === 0 && this.aim < 0.5 && !this.reloading ? '0.7' : this.weapon === 1 ? '0.35' : '0';
     for (const id of ['hurt', 'hitmark']) { const el = $(id); const o = Number(el.style.opacity || 0); if (o > 0) el.style.opacity = String(Math.max(0, o - dt * (id === 'hurt' ? 1.2 : 5))); }

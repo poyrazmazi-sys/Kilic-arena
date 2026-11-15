@@ -29,7 +29,7 @@ export class Player {
     if (lx || ly) this.look(lx * 900 * dt, ly * 600 * dt);
     let f = (k.has('KeyW') ? 1 : 0) - (k.has('KeyS') ? 1 : 0) - this.stick.y, s = (k.has('KeyD') ? 1 : 0) - (k.has('KeyA') ? 1 : 0) + this.stick.x;
     const sprint = k.has('ShiftLeft') || k.has('ShiftRight') || this.stick.length() > 0.92;
-    const speed = (sprint ? 6.2 : 3.6) * this.speedMul * (this.enabled ? 1 : 0);
+    const speed = (sprint ? 7.8 : 4.7) * this.speedMul * (this.enabled ? 1 : 0);
     const dir = new THREE.Vector3(s, 0, -f); if (dir.lengthSq() > 1) dir.normalize();
     dir.applyAxisAngle(THREE.Object3D.DEFAULT_UP, this.yaw);
     if (this.grounded) { this.vy = -2; if ((k.has('Space') || this.jumpQueued) && this.enabled) this.vy = 4.8; } else this.vy -= 13 * dt;
@@ -43,6 +43,6 @@ export class Player {
     const sh = this.shake * this.shake, t = this.feet;
     this.camera.position.set(t.x + (Math.random() - 0.5) * sh * 0.25, t.y + 1.65 + Math.sin(this.bob * 2) * amp + (Math.random() - 0.5) * sh * 0.25, t.z);
     this.camera.rotation.set(this.pitch + (Math.random() - 0.5) * sh * 0.03, this.yaw + Math.cos(this.bob) * amp * 0.12, (Math.random() - 0.5) * sh * 0.03, 'YXZ');
-    if (t.y < -30) this.teleport(new THREE.Vector3(-5.5, 10.2, 0));
+    if (t.y < 7.2) this.teleport(new THREE.Vector3(0.5, 8.15, THREE.MathUtils.clamp(t.z, -45, 45))); // fell off the wall: put back on the walkway
   }
 }

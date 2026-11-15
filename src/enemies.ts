@@ -38,7 +38,7 @@ export class Enemy {
     this.root.add(this.body); this.root.position.copy(pos);
     const s = cap ? 1.18 : 0.96 + Math.random() * 0.1; this.body.scale.setScalar(s);
     this.maxHp = this.hp = (cap ? 700 : 100) * (cap ? diffHp : 1);
-    this.speed = cap ? 2.3 : kind === 'spear' ? 2.9 + Math.random() * 0.5 : 2.2;
+    this.speed = cap ? 2.8 : kind === 'spear' ? 3.5 + Math.random() * 0.6 : 2.6;
     this.reach = cap ? 2.5 : 2.5;
     this.static = kind === 'sniper';
   }

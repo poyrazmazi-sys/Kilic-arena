@@ -78,6 +78,7 @@ export async function buildWorld(scene: THREE.Scene, physics: Phys, aniso: numbe
   // play area limits on the walkway
   [-52, 52].forEach((z) => physics.box(0, 10, z, 6, 4, 0.3));
 
+  physics.box(2.35, 10.5, 0, 0.2, 2.5, 52); // invisible rail above the low city-side parapet
   // --- ground: camp plain, moat, terraces, city slope ---
   const mud = pbr('mud', aniso) as THREE.MeshStandardMaterial;
   const slab = (x0: number, x1: number, y: number, depth: number, collide = true, mat: THREE.Material = mud) => {

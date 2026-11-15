@@ -1,8 +1,10 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { fetchBin } from './bin';
 
 const iron = new THREE.MeshStandardMaterial({ color: 0x2a2826, roughness: 0.42, metalness: 0.95 });
 const steel = new THREE.MeshStandardMaterial({ color: 0xb8bcc0, roughness: 0.22, metalness: 1 });
-const brass = new THREE.MeshStandardMaterial({ color: 0x9a7030, roughness: 0.35, metalness: 1 });
+const brass = new THREE.MeshStandardMaterial({ color: 0x80602c, roughness: 0.5, metalness: 0.9 });
 const walnut = new THREE.MeshStandardMaterial({ color: 0x4a2a16, roughness: 0.75 });
 const sleeve = new THREE.MeshStandardMaterial({ color: 0x6a1814, roughness: 0.95 });
 const skin = new THREE.MeshStandardMaterial({ color: 0xb88860, roughness: 0.7 });
@@ -19,26 +21,24 @@ function arm(len = 0.42) {
 
 export function makeArquebus() {
   const g = new THREE.Group();
-  // side profile of the stock (z forward negative), extruded
-  const sh = new THREE.Shape();
-  sh.moveTo(0.42, -0.02); sh.lineTo(0.42, -0.14); sh.lineTo(0.30, -0.115); sh.lineTo(0.12, -0.065); sh.lineTo(0.0, -0.062);
-  sh.lineTo(-0.55, -0.045); sh.lineTo(-0.55, -0.012); sh.lineTo(0.05, -0.005); sh.lineTo(0.16, 0.0); sh.lineTo(0.3, -0.012); sh.closePath();
-  const stockG = new THREE.ExtrudeGeometry(sh, { depth: 0.044, bevelEnabled: true, bevelSize: 0.006, bevelThickness: 0.006, bevelSegments: 2 });
-  stockG.translate(0, 0, -0.022); stockG.rotateY(Math.PI / 2); // x-profile becomes z
-  const stock = new THREE.Mesh(stockG, walnut); g.add(stock);
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.0135, 0.0165, 1.02, 8), iron); barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.012, -0.36); g.add(barrel);
-  const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.019, 0.016, 0.035, 8), iron); muzzle.rotation.x = Math.PI / 2; muzzle.position.set(0, 0.012, -0.86); g.add(muzzle);
-  [-0.05, -0.3, -0.52].forEach((z) => { const b = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.016, 12), brass); b.rotation.x = Math.PI / 2; b.scale.set(0.8, 1, 1.25); b.position.set(0, -0.012, z); g.add(b); });
-  const pan = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.008, 0.035), iron); pan.position.set(0.028, 0.012, 0.1); g.add(pan);
-  const serp = new THREE.Group(); serp.position.set(0.03, -0.01, 0.17);
-  const lever = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.075, 0.012), iron); lever.position.y = 0.035; lever.rotation.x = -0.5; serp.add(lever);
-  const ember = new THREE.Mesh(new THREE.SphereGeometry(0.0035, 8, 6), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff5a10).multiplyScalar(3) })); ember.position.set(0, 0.07, -0.022); serp.add(ember);
-  g.add(serp);
-  const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.7, 6), walnut); rod.rotation.x = Math.PI / 2; rod.position.set(0, -0.04, -0.25); g.add(rod);
-  const right = arm(); right.position.set(0.01, -0.07, 0.24); right.rotation.set(0.35, -0.25, 0); g.add(right);
-  const left = arm(); left.position.set(-0.005, -0.065, -0.22); left.rotation.set(0.5, 0.75, 0.3); g.add(left);
-  g.traverse((o) => { (o as THREE.Mesh).castShadow = false; o.frustumCulled = false; });
-  return { group: g, left, serp, muzzleLocal: new THREE.Vector3(0, 0.012, -0.9) };
+  const right = arm(); right.position.set(0.012, -0.075, 0.25); right.rotation.set(0.35, -0.25, 0); g.add(right);
+  const left = arm(); left.position.set(-0.005, -0.07, -0.22); left.rotation.set(0.5, 0.75, 0.3); g.add(left);
+  const out = { group: g, left, serp: new THREE.Object3D() as THREE.Object3D, muzzleLocal: new THREE.Vector3(0, 0.014, -0.88) };
+  const tl = new THREE.TextureLoader(); const base = `${import.meta.env.BASE_URL}tex/weathered_brown_planks`;
+  const tx = (n: string, srgb: boolean) => { const t = tl.load(`${base}_${n}.jpg`); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(2.2, 9); if (srgb) t.colorSpace = THREE.SRGBColorSpace; return t; };
+  const mats: Record<string, THREE.Material> = {
+    wood: new THREE.MeshStandardMaterial({ map: tx('diff', true), normalMap: tx('nor', false), roughnessMap: tx('arm', false), color: 0xc08a5c, roughness: 0.85 }),
+    iron: new THREE.MeshStandardMaterial({ color: 0x3a3836, roughness: 0.38, metalness: 1 }), brass,
+    cord: new THREE.MeshStandardMaterial({ color: 0x8a7858, roughness: 1 }),
+  };
+  fetchBin(`${import.meta.env.BASE_URL}models/arquebus.json`).then((buf) => new GLTFLoader().parseAsync(buf, '')).then((gltf) => {
+    gltf.scene.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) { m.material = mats[(m.material as THREE.Material).name] ?? mats.iron; m.frustumCulled = false; } });
+    const serp = gltf.scene.getObjectByName('serp'); if (serp) { out.serp = serp;
+      const ember = new THREE.Mesh(new THREE.SphereGeometry(0.004, 8, 6), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff5a10).multiplyScalar(4) })); ember.position.set(0, 0.046, -0.084); serp.add(ember); }
+    g.add(gltf.scene);
+  });
+  g.traverse((o) => { o.frustumCulled = false; });
+  return out;
 }
 
 export function makeKilic() {

@@ -131,6 +131,7 @@ async function main() {
   }
 
   (window as any).__sim = (secs: number, fireEvery = 0) => { let ft2 = 0; for (let i = 0; i < secs * 30; i++) { player.update(1 / 30); game.update(1 / 30); world.update(1 / 30, i / 30, camera); camera.updateMatrixWorld(true); if (fireEvery) { ft2 += 1 / 30; if (ft2 > fireEvery) { ft2 = 0; game.primary(); game.startReload(); } } } const g = game as any; return { state: game.state, wave: game.wave, hp: Math.round(game.hp), ammo: game.ammo, pos: player.position.toArray().map((v: number) => +v.toFixed(1)), enemies: g.enemies.map((e: any) => [e.kind, e.dead ? 'dead' : e.state, ...e.root.position.toArray().map((v: number) => +v.toFixed(1))]) }; };
+  const basePR = renderer.getPixelRatio(); let scale = 1, slow = 0;
   const clock = new THREE.Clock(); let realT = performance.now(); let t = 0, nextFire = 14, frames = 0, ft = 0;
   function frame() {
     const dt = Math.min(clock.getDelta(), 0.05); t += dt;
@@ -142,7 +143,8 @@ async function main() {
     sunMesh.position.copy(camera.position).addScaledVector(sunDir, 3000);
     sun.target.position.copy(camera.position); sun.position.copy(camera.position).addScaledVector(sunDir, 300);
     composer.render(dt);
-    frames++; ft += dt; if (ft > 0.5) { const now = performance.now(); statsEl.textContent = `${Math.round(frames / ((now - realT) / 1000))} fps`; realT = now; frames = 0; ft = 0; (window as any).__ready = t > 1.5; }
+    frames++; ft += dt; if (ft > 0.5) { const now = performance.now(); const fps = frames / ((now - realT) / 1000); statsEl.textContent = `${Math.round(fps)} fps`; realT = now;
+      if (!shot && t > 6) { slow = fps < 42 ? slow + 1 : 0; if (slow >= 4 && scale > 0.5) { scale *= 0.82; slow = 0; renderer.setPixelRatio(basePR * scale); composer.setSize(innerWidth, innerHeight); } } frames = 0; ft = 0; (window as any).__ready = t > 1.5; }
     requestAnimationFrame(frame);
   }
   frame();
