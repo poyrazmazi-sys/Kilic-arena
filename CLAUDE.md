@@ -3,9 +3,11 @@
 Browser first-person shooter set at the 1453 siege of Constantinople. Full plan: GAME_PLAN.md.
 
 ## Working rules
-- Do not start a milestone before the previous one is approved by the user.
-- Stop at the end of each milestone: live Vercel link, screenshots, test steps, and an honest
-  list of what looks bad or is broken.
+- The user asked (2026-11-15) for milestones 1 to 4 to be built straight through without
+  stopping for approval. Still report honestly at the end: live link, screenshots, test
+  steps, and what looks bad or is broken.
+- Work economically: minimal tokens, linear order, no over-polishing one thing.
+- Walls are modelled in Blender (blender/build_walls.py, bpy module), not built in game code.
 - Vercel preview deploys are pre-approved. Do not ask each time.
 - Never use em dashes in anything written for the user (chat, docs, in-game text).
 - Check historical facts before using them. Flag anything uncertain in GAME_PLAN.md section 8.
