@@ -171,6 +171,7 @@ export class Game {
           const nav = (e as any).nav; pos.y = (nav === 2 || nav === 12) ? this.stairY(pos.z) : nav === 3 || nav === 10 || nav === 11 ? 10 : (nav === 0 ? (pos.y > 9.6 ? 10 : 8) : 8);
         }
       }
+      if (dist < 1.3 && dist > 0.01 && sameLevel) { pos.x -= (dx / dist) * (1.3 - dist); pos.z -= (dz / dist) * (1.3 - dist); }
       for (const o of this.enemies) if (o !== e && !o.dead) { const ox = pos.x - o.root.position.x, oz = pos.z - o.root.position.z, od = Math.hypot(ox, oz); if (od < 0.85 && od > 0.001) { pos.x += (ox / od) * (0.85 - od) * 0.5; pos.z += (oz / od) * (0.85 - od) * 0.5; } }
       let dy = face - e.root.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); e.root.rotation.y += dy * Math.min(1, dt * 8);
       e.animate(dt, moving);

@@ -1,55 +1,80 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { fetchBin } from './bin';
 
 export type Kind = 'spear' | 'crossbow' | 'sniper' | 'captain';
 const M = (c: number, r = 0.85, m = 0) => new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: m });
-const mail = M(0x6a6c70, 0.45, 0.9), plate = M(0xa8acb0, 0.28, 1), skin = M(0xb08868, 0.7), wood = M(0x4a3420, 0.7), leather = M(0x3a2a1c, 0.8);
-const tunics = [M(0x7a2a24), M(0x2a3a6a), M(0x6a5a30), M(0xc8c0b0)];
-const red = M(0xa01c18);
-const box = (w: number, h: number, d: number, m: THREE.Material, y = 0) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.y = y; b.castShadow = true; return b; };
+const plate = M(0xa8acb0, 0.28, 1), wood = M(0x4a3420, 0.7);
+const box = (w: number, h: number, d: number, m: THREE.Material) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.castShadow = true; return b; };
+
+let proto: THREE.Object3D, clips: Record<string, THREE.AnimationClip> = {}, baseScale = 1;
+const tints = [0xffffff, 0xe0d0c4, 0xc8d0e0, 0xd8d8c0], tintMats = new Map<string, THREE.Material>();
+
+/** Loads the Mixamo knight (mesh, skeleton and all animation clips). Call once before spawning enemies. */
+export async function loadKnight() {
+  const gltf = await new GLTFLoader().parseAsync(await fetchBin(`${import.meta.env.BASE_URL}models/knight.json`), '');
+  proto = gltf.scene;
+  proto.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) { m.castShadow = true; m.frustumCulled = false; (m.material as THREE.MeshStandardMaterial).envMapIntensity = 1; } });
+  proto.updateMatrixWorld(true); const wy = (n: string) => proto.getObjectByName(n)?.getWorldPosition(new THREE.Vector3()).y ?? 0;
+  const h = wy('mixamorigHeadTop_End') - Math.min(wy('mixamorigLeftToeBase'), wy('mixamorigLeftFoot')); baseScale = h > 0.1 ? 1.8 / (h + 0.06) : 1; console.log('knight height', h.toFixed(2), 'scale', baseScale.toFixed(2));
+  for (const c of gltf.animations) {
+    if (!c.name.startsWith('dying')) for (const tr of c.tracks) if (/Hips\.position$/.test(tr.name)) { const v = tr.values; for (let i = 3; i < v.length; i += 3) { v[i] = v[0]; v[i + 2] = v[2]; } }
+    clips[c.name] = c;
+  }
+}
 
 export class Enemy {
   root = new THREE.Group(); body = new THREE.Group();
-  private legL: THREE.Group; private legR: THREE.Group; private armL: THREE.Group; private armR: THREE.Group; private torso: THREE.Group;
+  private mixer: THREE.AnimationMixer; private actions: Record<string, THREE.AnimationAction> = {}; private cur = ''; private lastState = '';
   hp: number; maxHp: number; dead = false; deadT = 0; state: 'move' | 'windup' | 'recover' | 'aim' | 'stagger' = 'move'; stateT = 0;
-  walk = Math.random() * 6; speed: number; reach: number; cooldown = 0.5 + Math.random(); static = false; strafe = Math.random() < 0.5 ? -1 : 1;
-  fallDir = 1;
+  walk = 0; speed: number; reach = 2.5; cooldown = 0.5 + Math.random(); static = false; strafe = 1; fallDir = 1;
 
   constructor(public kind: Kind, pos: THREE.Vector3, diffHp: number) {
     const cap = kind === 'captain';
-    const armor = cap ? plate : mail, tunic = cap ? plate : tunics[Math.floor(Math.random() * tunics.length)];
-    this.torso = new THREE.Group(); this.torso.position.y = 0.95;
-    this.torso.add(box(0.44, 0.58, 0.25, tunic, 0.3));
-    if (!cap && tunic === tunics[3]) { const c1 = box(0.08, 0.5, 0.26, red, 0.3), c2 = box(0.45, 0.08, 0.26, red, 0.36); this.torso.add(c1, c2); } // Genoese cross of St George
-    this.torso.add(box(0.46, 0.2, 0.27, armor, 0.52), box(0.46, 0.06, 0.27, leather, 0.02));
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.105, 12, 10), skin); head.position.y = 0.74; head.castShadow = true;
-    const helm = new THREE.Mesh(new THREE.SphereGeometry(0.125, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.55), cap ? plate : mail); helm.position.y = 0.76; helm.castShadow = true;
-    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.21, 0.02, 14), cap ? plate : mail); brim.position.y = 0.775;
-    this.torso.add(head, helm); if (kind !== 'captain' && Math.random() < 0.6) this.torso.add(brim);
-    if (cap) { const visor = box(0.2, 0.12, 0.12, plate, 0.72); visor.position.z = -0.07; const plume = box(0.04, 0.22, 0.16, red, 0.98); this.torso.add(visor, plume); }
-    const limb = (w: number, h: number, m: THREE.Material, x: number, y: number) => { const g = new THREE.Group(); g.position.set(x, y, 0); g.add(box(w, h, w, m, -h / 2)); return g; };
-    this.armL = limb(0.11, 0.6, armor, -0.28, 0.56); this.armR = limb(0.11, 0.6, armor, 0.28, 0.56);
-    this.torso.add(this.armL, this.armR);
-    this.legL = limb(0.14, 0.92, cap ? plate : leather, -0.11, 0.95); this.legR = limb(0.14, 0.92, cap ? plate : leather, 0.11, 0.95);
-    this.body.add(this.torso, this.legL, this.legR);
-    if (kind === 'spear') { const s = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 2.3, 6), wood); s.rotation.x = Math.PI / 2; s.position.set(0, -0.55, -0.6); const tip = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.22, 6), plate); tip.rotation.x = -Math.PI / 2; tip.position.set(0, -0.55, -1.85); this.armR.add(s, tip);
-      const sh = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.03, 14), tunics[Math.floor(Math.random() * 3)]); sh.rotation.x = Math.PI / 2; sh.position.set(-0.02, -0.4, -0.12); this.armL.add(sh); }
-    if (kind === 'captain') { const s = box(0.05, 1.15, 0.012, plate, -1.1); const gd = box(0.26, 0.03, 0.03, plate, -0.52); const grp = new THREE.Group(); grp.add(s, gd); grp.rotation.x = Math.PI / 2; grp.position.set(0, -0.55, 0.0); this.armR.add(grp); }
-    if (kind === 'crossbow' || kind === 'sniper') { const st = box(0.05, 0.05, 0.7, wood); st.position.set(0, -0.5, -0.3); const bw = box(0.7, 0.03, 0.04, wood); bw.position.set(0, -0.5, -0.62); this.armR.add(st, bw); }
+    const model = cloneSkinned(proto); model.rotation.y = Math.PI;
+    const tint = cap ? 0xe8c070 : tints[Math.floor(Math.random() * tints.length)];
+    model.traverse((o) => {
+      const m = o as THREE.Mesh; if (!m.isMesh) return;
+      const src = m.material as THREE.MeshStandardMaterial, key = src.uuid + tint;
+      if (!tintMats.has(key)) { const c = src.clone(); c.color.set(tint); tintMats.set(key, c); }
+      m.material = tintMats.get(key)!;
+    });
+    const s = baseScale * (cap ? 1.16 : 0.97 + Math.random() * 0.08); this.body.scale.setScalar(s); this.body.add(model);
     this.root.add(this.body); this.root.position.copy(pos);
-    const s = cap ? 1.18 : 0.96 + Math.random() * 0.1; this.body.scale.setScalar(s);
-    this.maxHp = this.hp = (cap ? 700 : 100) * (cap ? diffHp : 1);
+    // weapon in the right hand (bone space is in centimetres)
+    const hand = model.getObjectByName('mixamorigRightHand');
+    if (hand) {
+      const w = new THREE.Group(); w.scale.setScalar(100 / baseScale * 1); w.position.set(0, 9, 3);
+      if (kind === 'spear') { const sh = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 2.3, 6), wood); sh.rotation.x = Math.PI / 2; sh.position.z = 0.35; const tip = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.24, 6), plate); tip.rotation.x = Math.PI / 2; tip.position.z = 1.6; sh.castShadow = true; w.add(sh, tip); }
+      else if (cap) { const bl = box(0.012, 0.05, 1.1, plate); bl.position.z = 0.62; const gd = box(0.03, 0.24, 0.03, plate); gd.position.z = 0.08; w.add(bl, gd); }
+      else { const st = box(0.05, 0.05, 0.7, wood); st.position.z = 0.2; const bw = box(0.03, 0.7, 0.04, wood); bw.position.z = 0.5; w.add(st, bw); }
+      hand.add(w);
+    }
+    this.mixer = new THREE.AnimationMixer(model);
+    for (const n in clips) this.actions[n] = this.mixer.clipAction(clips[n]);
+    this.maxHp = this.hp = cap ? 500 * diffHp : 100;
     this.speed = cap ? 2.8 : kind === 'spear' ? 3.5 + Math.random() * 0.6 : 2.6;
-    this.reach = cap ? 2.5 : 2.5;
     this.static = kind === 'sniper';
+    this.play('idle', 0); this.mixer.update(Math.random());
+  }
+
+  private play(name: string, fade = 0.18, once = false, timeScale = 1, restart = false) {
+    const a = this.actions[name]; if (!a) return;
+    a.timeScale = timeScale;
+    if (this.cur === name && !restart) return;
+    const prev = this.actions[this.cur];
+    a.reset(); a.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, Infinity); a.clampWhenFinished = once; a.enabled = true; a.setEffectiveWeight(1);
+    if (prev && prev !== a) a.crossFadeFrom(prev, fade, false); a.play(); this.cur = name;
   }
 
   /** Ray hit test. Returns distance and whether it was a head shot. */
   hitTest(ray: THREE.Ray, maxDist: number): { d: number; head: boolean } | null {
     if (this.dead) return null;
-    const s = this.body.scale.x, p = this.root.position; let best: { d: number; head: boolean } | null = null;
-    const c = new THREE.Vector3(), v = new THREE.Vector3();
-    for (const [h, r, head] of [[0.35, 0.3, 0], [0.75, 0.32, 0], [1.2, 0.34, 0], [1.72, 0.19, 1]] as [number, number, number][]) {
-      c.set(p.x, p.y + h * s, p.z); v.subVectors(c, ray.origin); const tca = v.dot(ray.direction); if (tca < 0 || tca > maxDist) continue;
+    const s = this.body.scale.x / baseScale, p = this.root.position; let best: { d: number; head: boolean } | null = null;
+    const c = new THREE.Vector3(), v = new THREE.Vector3(), crouch = this.cur === 'crouch_idle' ? 0.62 : 1;
+    for (const [h, r, head] of [[0.35, 0.3, 0], [0.75, 0.32, 0], [1.2, 0.34, 0], [1.68, 0.2, 1]] as [number, number, number][]) {
+      c.set(p.x, p.y + h * s * crouch, p.z); v.subVectors(c, ray.origin); const tca = v.dot(ray.direction); if (tca < 0 || tca > maxDist) continue;
       const d2 = v.lengthSq() - tca * tca; if (d2 > r * r * s * s) continue;
       if (!best || tca < best.d) best = { d: tca, head: !!head };
     }
@@ -58,21 +83,17 @@ export class Enemy {
 
   animate(dt: number, moving: boolean) {
     if (this.dead) {
-      this.deadT += dt; const k = Math.min(1, this.deadT / 0.7), e = k * k;
-      this.body.rotation.x = this.fallDir * e * (Math.PI / 2 - 0.08); this.body.position.y = e * 0.14;
-      this.armL.rotation.x = -e * 1.2; this.armR.rotation.x = -e * 0.6; this.legL.rotation.x = e * 0.3;
-      if (this.deadT > 9) this.root.position.y -= dt * 0.25;
-      return;
+      if (this.lastState !== 'dead') { this.lastState = 'dead'; this.play(Math.random() < 0.5 ? 'dying_1' : 'dying_2', 0.12, true, 1.5, true); }
+      this.deadT += dt; if (this.deadT > 9) this.root.position.y -= dt * 0.25;
+      this.mixer.update(dt); return;
     }
-    if (moving) this.walk += dt * this.speed * 2.6;
-    const sw = moving ? Math.sin(this.walk) * 0.6 : 0;
-    this.legL.rotation.x = sw; this.legR.rotation.x = -sw; this.armL.rotation.x = -sw * 0.5 - 0.35;
-    this.body.position.y = moving ? Math.abs(Math.cos(this.walk)) * 0.04 : 0;
-    let armR = 0.25 + sw * 0.2, lean = moving ? 0.08 : 0;
-    if (this.state === 'windup') { const k = this.stateT; armR = this.kind === 'captain' ? -2.2 * Math.min(1, k * 2.2) : 0.5 + k * 0.5; lean = -0.12; }
-    if (this.state === 'recover') { const k = Math.min(1, this.stateT * 5); armR = this.kind === 'captain' ? -2.2 + k * 3.0 : 0.9 - k * 1.0; lean = 0.3 * (1 - this.stateT); this.body.position.z = this.kind === 'captain' ? 0 : -Math.sin(k * Math.PI) * 0.0; }
-    if (this.state === 'aim') { armR = -1.45; this.armL.rotation.x = -1.3; lean = 0; }
-    if (this.state === 'stagger') { lean = -0.35 * (1 - this.stateT / 0.45); }
-    this.armR.rotation.x = armR; this.torso.rotation.x = lean;
+    const entered = this.state !== this.lastState; this.lastState = this.state;
+    if (this.state === 'stagger') this.play('hit_reaction', 0.08, true, 2.6, entered);
+    else if (this.state === 'windup') this.play('sword_slash', 0.12, true, (clips.sword_slash?.duration ?? 3.5) / (this.kind === 'captain' ? 1.9 : 1.6), entered);
+    else if (this.state === 'recover') { /* slash keeps playing */ }
+    else if (this.state === 'aim') this.play('rifle_aim_idle', 0.25);
+    else if (moving) { if (this.speed > 3.2) this.play('running', 0.2, false, this.speed / 4.6); else this.play('walking', 0.2, false, this.speed / 1.7); }
+    else this.play(this.static ? 'crouch_idle' : 'idle', 0.3);
+    this.mixer.update(dt);
   }
 }

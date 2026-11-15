@@ -7,6 +7,7 @@ import { LOOKS, loadSky } from './looks';
 import { buildWorld } from './world';
 import { Player } from './player';
 import { Game } from './game';
+import { loadKnight } from './enemies';
 import { initAudio, sfx } from './audio';
 import { t as tr, lang, setLang } from './i18n';
 
@@ -44,6 +45,7 @@ async function main() {
   const world = await buildWorld(scene, physics, renderer.capabilities.getMaxAnisotropy(), quality);
   const player = new Player(physics, camera, renderer.domElement, new THREE.Vector3(-5.5, 10.1, 0));
   world.onFire = () => { player.shake = Math.max(player.shake, 1); };
+  await loadKnight();
   const game = new Game(scene, camera, physics, player, world, renderer.domElement);
   const fire0 = world.fire.bind(world); world.fire = () => { fire0(); sfx.bombard(); };
 

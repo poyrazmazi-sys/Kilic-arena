@@ -43,22 +43,10 @@ export function makeArquebus() {
 
 export function makeKilic() {
   const g = new THREE.Group();
-  const sh = new THREE.Shape();
-  // gently curved single-edged blade, widening toward the tip (yalman)
-  const pts: [number, number][] = [];
-  for (let i = 0; i <= 14; i++) { const k = i / 14; pts.push([k * 0.78, 0.16 * k * k]); }
-  sh.moveTo(0, -0.016);
-  pts.forEach(([x, y], i) => sh.lineTo(x, y - 0.016 - (i > 9 ? (i - 9) * 0.002 : 0)));
-  sh.lineTo(0.8, 0.185);
-  for (let i = 14; i >= 0; i--) { const [x, y] = pts[i]; sh.lineTo(x, y + 0.016); }
-  sh.closePath();
-  const bg = new THREE.ExtrudeGeometry(sh, { depth: 0.004, bevelEnabled: true, bevelSize: 0.003, bevelThickness: 0.002, bevelSegments: 1 });
-  bg.translate(0.06, 0, -0.002); bg.rotateZ(Math.PI / 2);
-  const blade = new THREE.Mesh(bg, steel); g.add(blade);
-  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.018, 0.022), brass); guard.position.y = 0.05; g.add(guard);
-  const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.016, 0.11, 8), leather); grip.position.y = -0.01; g.add(grip);
-  const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.02, 8, 6), brass); pommel.position.set(-0.012, -0.07, 0); g.add(pommel);
   const a = arm(); a.position.set(0, -0.01, 0.0); a.rotation.set(0.9, 0, 0); g.add(a);
+  fetchBin(`${import.meta.env.BASE_URL}models/kilij.json`).then((buf) => new GLTFLoader().parseAsync(buf, '')).then((gltf) => {
+    gltf.scene.traverse((o) => { o.frustumCulled = false; const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial; if (m) { m.color.set(0x8a8a8a); m.envMapIntensity = 0.6; } }); gltf.scene.scale.setScalar(0.82); g.add(gltf.scene);
+  });
   g.traverse((o) => { o.frustumCulled = false; });
   return { group: g };
 }
