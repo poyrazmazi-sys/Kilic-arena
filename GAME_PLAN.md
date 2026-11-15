@@ -1,6 +1,6 @@
 # Janissary: 1453 - Game Plan
 
-Status: DRAFT, waiting for approval. No game code is written until this is approved.
+Status: APPROVED by the user on 2026-11-15.
 
 ## 1. What we are building
 
@@ -159,6 +159,6 @@ Flags where the game departs from history or I am not certain:
 
 ## 10. Open questions
 
-1. Player character name. Suggestion: Davud, a young janissary. Yours to change.
+1. Player character name: Davud (decided).
 2. Anything you definitely do NOT want in the game?
 3. Blender: connect the laptop before milestone 1, or start with the code-built fallback?
