@@ -39,6 +39,9 @@ button.on{background:#8a6a2a;color:#1a1208}button#go{font-size:20px;padding:12px
 #death,#win{position:fixed;inset:0;z-index:4;display:flex;flex-direction:column;align-items:center;justify-content:center;opacity:0;transition:opacity 1.2s;pointer-events:none;text-align:center}
 #death{background:rgba(40,4,2,.6);font-size:20px;letter-spacing:.1em}#win{background:rgba(10,6,3,.72);cursor:pointer}
 #win h1{font-weight:400;letter-spacing:.3em;color:#e2c275;font-size:clamp(26px,4.5vw,56px);margin:0;text-transform:uppercase}
+#touch{display:none;position:fixed;inset:0;z-index:3;pointer-events:none}
+#touch div{position:absolute;pointer-events:auto;width:74px;height:74px;border-radius:50%;border:1px solid #c9a24b;background:rgba(20,12,6,.35);color:#e2c275;display:flex;align-items:center;justify-content:center;font-size:12px;letter-spacing:.1em;-webkit-user-select:none;user-select:none}
+#tFire{right:36px;bottom:110px;width:96px!important;height:96px!important}#tAim{right:150px;bottom:70px}#tReload{right:40px;bottom:230px}#tSwap{right:140px;bottom:190px}#tJump{right:240px;bottom:40px}
 </style>
 </head>
 <body>
@@ -48,6 +51,7 @@ button.on{background:#8a6a2a;color:#1a1208}button#go{font-size:20px;padding:12px
 <div class="row"><button id="lang">English / Türkçe</button></div><button id="go"></button><p class="small" id="controls"></p></div></div>
 <div id="hud"><div id="hurt"></div><div id="compass"><div></div></div><div id="cross"></div><div id="hitmark"></div><div id="banner"></div><div id="sub"></div>
 <div id="reload"><div></div></div><div id="hp"><div></div></div><div id="ammo"></div></div>
+<div id="touch"><div id="tFire">FIRE</div><div id="tAim">AIM</div><div id="tReload">LOAD</div><div id="tSwap">SWAP</div><div id="tJump">JUMP</div></div>
 <div id="death"><div id="deathText"></div></div><div id="win"><div id="winText"></div></div>
 <div id="hint"></div><div id="stats"></div>
 <script type="module" src="/src/main.ts"></script>

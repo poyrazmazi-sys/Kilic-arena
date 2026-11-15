@@ -16,8 +16,14 @@ Browser first-person shooter set at the 1453 siege of Constantinople. Full plan:
 
 ## Tech stack
 - Three.js, TypeScript (strict), Vite. WebGL2 baseline; WebGPU optional, never required.
-- pmndrs/postprocessing, Rapier (WASM), Web Audio / Howler.
-- Assets: GLB with Meshopt or Draco, KTX2 textures. Hosting: Vercel.
+- pmndrs/postprocessing, n8ao. Physics is src/phys.ts (axis-aligned boxes; Rapier was dropped
+  because every collider is a box and WASM is a hosting risk). Audio is synthesised Web Audio.
+- Assets: GLB models and HDR skies are packed to base64 JSON by tools/pack.py (originals in
+  assets_src/). Textures are 2k JPG from Poly Haven.
+- Hosting: currently a private Claude artifact (https://claude.ai/artifact/Ty4r16ba1BnsP56SXUxCaT),
+  published from dist/ via the page generated in the build notes below. Vercel needs a GitHub
+  repo or token that this session did not have.
+- Test tools: tools/shot.mjs (screenshots), tools/sim.mjs (fast-forward combat check).
 - Keep simulation state separate from rendering and driven by inputs, so co-op can be added.
 
 ## Art rules

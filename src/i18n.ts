@@ -14,9 +14,10 @@ const T: Record<string, [string, string]> = {
   s_come: ['They are coming along the wall!', 'Surdan geliyorlar!'], s_reload: ['Load your musket, Davud!', 'Tüfeğini doldur Davud!'],
   s_cross: ['Crossbows on the inner wall! Take cover!', 'İç surda tatar yayları! Siper al!'], s_gun: ['Stand clear, the great gun!', 'Açılın, büyük top!'],
   s_capt: ['Their captain! Bring him down!', 'Kaptanları! İndirin onu!'], s_allah: ['Forward, lions of the Sultan!', 'İleri, Sultanın aslanları!'],
-  controls: ['WASD move · Mouse look · Click fire · Right click aim / block · R reload · 1 musket · 2 sword · Shift sprint · L language', 'WASD yürü · Fare bak · Tık ateş · Sağ tık nişan / savun · R doldur · 1 tüfek · 2 kılıç · Shift koş · L dil'],
+  controls: ['WASD move · Mouse look · Click fire · Right click aim / block · R reload · 1 musket · 2 sword · Shift sprint · L language. No mouse capture? Arrow keys look, F fire, E aim.', 'WASD yürü · Fare bak · Tık ateş · Sağ tık nişan / savun · R doldur · 1 tüfek · 2 kılıç · Shift koş · L dil. Fare yakalanmazsa: ok tuşları bak, F ateş, E nişan.'],
   loading: ['Reloading', 'Dolduruluyor'], look: ['Look', 'Görünüm'],
 };
-export let lang: Lang = (localStorage.getItem('j1453.lang') as Lang) || 'en';
-export const setLang = (l: Lang) => { lang = l; localStorage.setItem('j1453.lang', l); };
+import { load, save } from './store';
+export let lang: Lang = (load('lang') as Lang) || 'en';
+export const setLang = (l: Lang) => { lang = l; save('lang', l); };
 export const t = (k: string) => (T[k] ? T[k][lang === 'en' ? 0 : 1] : k);

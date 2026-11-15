@@ -10,6 +10,7 @@ for (let i = 0; i < args.length; i += 2) {
   await page.goto(`http://localhost:5173/?shot=1&q=${process.env.Q ?? 2}&${args[i + 1]}`);
   await page.waitForFunction(() => window.__ready === true, null, { timeout: 240000 });
   await page.waitForTimeout(Number(process.env.WAIT ?? 1500));
+  if (process.env.KEY) { await page.keyboard.press(process.env.KEY); await page.waitForTimeout(Number(process.env.AFTER ?? 400)); }
   await page.screenshot({ timeout: 300000, path: `shots/${args[i]}.jpg`, quality: 88 });
   console.log('shot', args[i], await page.evaluate(() => document.getElementById('stats').textContent));
 }

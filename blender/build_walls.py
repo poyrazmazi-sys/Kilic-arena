@@ -1,5 +1,5 @@
 """Builds the Theodosian wall modules in Blender, bakes AO, exports GLB + .blend.
-Run: python blender/build_walls.py   (python with the bpy module)
+Run: python blender/build_walls.py   (python with the bpy module), then python3 tools/pack.py
 Axes in Blender: X = east (city), Y = along the wall (north), Z = up. Exported Y-up for three.js.
 """
 import bpy, bmesh, math, random, os, sys

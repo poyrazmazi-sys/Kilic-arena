@@ -4,13 +4,13 @@ const iron = new THREE.MeshStandardMaterial({ color: 0x2a2826, roughness: 0.42, 
 const steel = new THREE.MeshStandardMaterial({ color: 0xb8bcc0, roughness: 0.22, metalness: 1 });
 const brass = new THREE.MeshStandardMaterial({ color: 0x9a7030, roughness: 0.35, metalness: 1 });
 const walnut = new THREE.MeshStandardMaterial({ color: 0x4a2a16, roughness: 0.75 });
-const sleeve = new THREE.MeshStandardMaterial({ color: 0x8a1c18, roughness: 0.9 });
+const sleeve = new THREE.MeshStandardMaterial({ color: 0x6a1814, roughness: 0.95 });
 const skin = new THREE.MeshStandardMaterial({ color: 0xb88860, roughness: 0.7 });
 const leather = new THREE.MeshStandardMaterial({ color: 0x3a2618, roughness: 0.8 });
 
 function arm(len = 0.42) {
   const g = new THREE.Group();
-  const s = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.078, len, 12), sleeve); s.rotation.x = Math.PI / 2; s.position.z = len / 2 + 0.07;
+  const s = new THREE.Mesh(new THREE.CylinderGeometry(0.044, 0.06, len, 12), sleeve); s.rotation.x = Math.PI / 2; s.position.z = len / 2 + 0.07;
   const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.048, 0.048, 0.03, 10), brass); cuff.rotation.x = Math.PI / 2; cuff.position.z = 0.075;
   const hand = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), skin); hand.scale.set(0.9, 0.62, 1.2); hand.position.z = 0.02;
   const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.012, 0.04, 3, 6), skin); thumb.rotation.x = Math.PI / 2; thumb.position.set(0.04, 0.012, -0.01);

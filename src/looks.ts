@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { fetchBin } from './bin';
 import { HDRLoader } from 'three/examples/jsm/loaders/HDRLoader.js';
 
 export interface Look {
@@ -26,7 +27,8 @@ const cache = new Map<string, Promise<SkyData>>();
 
 /** Loads an HDRI and finds its sun direction and horizon colour so lights and fog match the sky. */
 export function loadSky(name: string): Promise<SkyData> {
-  if (!cache.has(name)) cache.set(name, new HDRLoader().setDataType(THREE.FloatType).loadAsync(`/sky/${name}_2k.hdr`).then((tex) => {
+  if (!cache.has(name)) cache.set(name, fetchBin(`${import.meta.env.BASE_URL}sky/${name}_2k.json`).then((buf) => {
+    const hl = new HDRLoader().setDataType(THREE.FloatType) as any; const tex = new THREE.DataTexture(); hl._applyTexData(tex, hl.parse(buf));
     tex.mapping = THREE.EquirectangularReflectionMapping;
     const { data, width: w, height: h } = tex.image as { data: Float32Array; width: number; height: number };
     const st = data.length / (w * h);

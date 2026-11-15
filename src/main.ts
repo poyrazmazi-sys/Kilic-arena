@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import RAPIER from '@dimforge/rapier3d-compat';
+import { Phys } from './phys';
+import { load, save } from './store';
 import { EffectComposer, RenderPass, EffectPass, BloomEffect, GodRaysEffect, VignetteEffect, ToneMappingEffect, ToneMappingMode, SMAAEffect, HueSaturationEffect, BrightnessContrastEffect, KernelSize } from 'postprocessing';
 import { N8AOPostPass } from 'n8ao';
 import { LOOKS, loadSky } from './looks';
@@ -16,10 +17,9 @@ const quality = Number(q.get('q') ?? (mobile ? 1 : 2)); // 0 low, 1 medium, 2 hi
 const statusEl = document.getElementById('status')!, overlay = document.getElementById('overlay')!, hint = document.getElementById('hint')!, statsEl = document.getElementById('stats')!;
 
 async function main() {
-  await RAPIER.init();
-  const physics = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
+  const physics = new Phys();
   const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', stencil: false, depth: false, preserveDrawingBuffer: shot });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, [0.75, 1, 1.5, 2][quality]));
+  renderer.setPixelRatio(Math.min(devicePixelRatio, [0.75, 1, 1.5, 2][quality]) * (mobile ? 0.75 : 1));
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.NoToneMapping;
@@ -81,9 +81,9 @@ async function main() {
     (bc as any).brightness = (L.exposure - 1) * 0.5; bc.contrast = L.contrast; hue.saturation = L.saturation;
     bloom.intensity = L.bloom * 0.6;
     world.setLook(L.smoke, L.smokeColor, L.embers);
-    hint.textContent = `${tr('look')} ${i + 1}: ${L.name}  (7 8 9)`; localStorage.setItem('j1453.look', String(i));
+    hint.textContent = `${tr('look')} ${i + 1}: ${L.name}  (7 8 9)`; save('look', String(i));
   }
-  await setLook(Number(q.get('look') ?? Number(localStorage.getItem('j1453.look') ?? 0) + 1) - 1);
+  await setLook(Number(q.get('look') ?? Number(load('look') ?? 0) + 1) - 1);
 
   addEventListener('keydown', (e) => {
     if (e.code === 'Digit7') setLook(0); if (e.code === 'Digit8') setLook(1); if (e.code === 'Digit9') setLook(2);
@@ -100,14 +100,26 @@ async function main() {
     statusEl.textContent = tr('intro1');
   }
   let started = false; texts(); el('menu').style.display = 'block';
-  diffBtns.forEach((b, i) => b.addEventListener('click', (e) => { e.stopPropagation(); if (started) return; game.diff = i; localStorage.setItem('j1453.diff', String(i)); texts(); }));
+  diffBtns.forEach((b, i) => b.addEventListener('click', (e) => { e.stopPropagation(); if (started) return; game.diff = i; save('diff', String(i)); texts(); }));
   el('lang').addEventListener('click', (e) => { e.stopPropagation(); setLang(lang === 'en' ? 'tr' : 'en'); texts(); });
-  const begin = () => { initAudio(); renderer.domElement.requestPointerLock(); if (!started) { started = true; game.start(); } overlay.style.display = 'none'; el('hud').style.opacity = '1'; };
+  const begin = () => { initAudio(); if (!mobile) player.requestLock(); else player.noLock = true; if (!started) { started = true; game.start(); } overlay.style.display = 'none'; el('hud').style.opacity = '1'; };
   el('go').addEventListener('click', begin);
-  document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && started && game.state !== 'won') { overlay.style.display = 'flex'; texts(); } });
+  document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && started && !player.noLock && game.state !== 'won') { overlay.style.display = 'flex'; texts(); } });
   addEventListener('mousedown', () => { if (game.state === 'dead' && game.stateT > 1.2) game.revive(); });
   el('win').addEventListener('click', () => location.reload());
   let autoplay = false;
+  // touch controls (iPad / phones)
+  if (mobile) {
+    el('touch').style.display = 'block'; let moveId = -1, lookId = -1, mx = 0, my = 0, lx = 0, ly = 0;
+    const cv = renderer.domElement;
+    cv.addEventListener('touchstart', (e) => { e.preventDefault(); for (const tc of Array.from(e.changedTouches)) { if (tc.clientX < innerWidth * 0.4 && moveId < 0) { moveId = tc.identifier; mx = tc.clientX; my = tc.clientY; } else if (lookId < 0) { lookId = tc.identifier; lx = tc.clientX; ly = tc.clientY; } } }, { passive: false });
+    cv.addEventListener('touchmove', (e) => { e.preventDefault(); for (const tc of Array.from(e.changedTouches)) { if (tc.identifier === moveId) player.stick.set((tc.clientX - mx) / 60, (tc.clientY - my) / 60).clampLength(0, 1); if (tc.identifier === lookId) { player.look((tc.clientX - lx) * 2.2, (tc.clientY - ly) * 2.2); lx = tc.clientX; ly = tc.clientY; } } }, { passive: false });
+    const end = (e: TouchEvent) => { for (const tc of Array.from(e.changedTouches)) { if (tc.identifier === moveId) { moveId = -1; player.stick.set(0, 0); } if (tc.identifier === lookId) lookId = -1; } };
+    cv.addEventListener('touchend', end); cv.addEventListener('touchcancel', end);
+    const btn = (id: string, down: () => void, up?: () => void) => { const b = el(id); b.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); if (game.state === 'dead' && game.stateT > 1.2) game.revive(); else down(); }, { passive: false }); if (up) b.addEventListener('touchend', (e) => { e.preventDefault(); up(); }); };
+    btn('tFire', () => game.primary()); btn('tAim', () => game.setAim(true), () => game.setAim(false)); btn('tReload', () => game.startReload()); btn('tSwap', () => game.swap()); btn('tJump', () => { player.jumpQueued = true; });
+    addEventListener('touchstart', () => { if (game.state === 'dead' && game.stateT > 1.2) game.revive(); });
+  }
 
   if (shot) {
     overlay.style.display = 'none'; hint.style.display = 'none';
@@ -118,18 +130,19 @@ async function main() {
     player.teleport(new THREE.Vector3(p[0], p[1], p[2])); player.yaw = THREE.MathUtils.degToRad(Number(q.get('yaw') ?? 90)); player.pitch = THREE.MathUtils.degToRad(Number(q.get('pitch') ?? -3));
   }
 
-  const clock = new THREE.Clock(); let t = 0, nextFire = 14, frames = 0, ft = 0;
+  (window as any).__sim = (secs: number, fireEvery = 0) => { let ft2 = 0; for (let i = 0; i < secs * 30; i++) { player.update(1 / 30); game.update(1 / 30); world.update(1 / 30, i / 30, camera); camera.updateMatrixWorld(true); if (fireEvery) { ft2 += 1 / 30; if (ft2 > fireEvery) { ft2 = 0; game.primary(); game.startReload(); } } } const g = game as any; return { state: game.state, wave: game.wave, hp: Math.round(game.hp), ammo: game.ammo, pos: player.position.toArray().map((v: number) => +v.toFixed(1)), enemies: g.enemies.map((e: any) => [e.kind, e.dead ? 'dead' : e.state, ...e.root.position.toArray().map((v: number) => +v.toFixed(1))]) }; };
+  const clock = new THREE.Clock(); let realT = performance.now(); let t = 0, nextFire = 14, frames = 0, ft = 0;
   function frame() {
     const dt = Math.min(clock.getDelta(), 0.05); t += dt;
-    const paused = started && !player.locked && !autoplay && game.state !== 'won';
-    physics.timestep = dt; player.update(dt); physics.step();
+    const paused = started && !player.active && !autoplay && game.state !== 'won';
+    player.update(dt);
     if (!paused) game.update(dt);
     if (!shot && t > nextFire) { world.fire(); nextFire = t + 40 + Math.random() * 25; }
     world.update(dt, t, camera);
     sunMesh.position.copy(camera.position).addScaledVector(sunDir, 3000);
     sun.target.position.copy(camera.position); sun.position.copy(camera.position).addScaledVector(sunDir, 300);
     composer.render(dt);
-    frames++; ft += dt; if (ft > 0.5) { statsEl.textContent = `${Math.round(frames / ft)} fps`; frames = 0; ft = 0; (window as any).__ready = t > 1.5; }
+    frames++; ft += dt; if (ft > 0.5) { const now = performance.now(); statsEl.textContent = `${Math.round(frames / ((now - realT) / 1000))} fps`; realT = now; frames = 0; ft = 0; (window as any).__ready = t > 1.5; }
     requestAnimationFrame(frame);
   }
   frame();

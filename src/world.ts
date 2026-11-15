@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import RAPIER from '@dimforge/rapier3d-compat';
+import { Phys } from './phys';
+import { fetchBin } from './bin';
 
 const TILE: Record<string, number> = { stone: 3.2, brick: 1.6, floor: 2.4, wood: 2.0, mud: 11 };
 const TEX: Record<string, string> = { stone: 'large_sandstone_blocks', brick: 'medieval_red_brick', floor: 'cobblestone_large_01', wood: 'weathered_brown_planks', mud: 'brown_mud_02' };
@@ -14,7 +15,7 @@ function tiled(url: string, tile: number, srgb: boolean, aniso: number) {
   return t;
 }
 export function pbr(key: string, aniso: number, ao?: THREE.Texture) {
-  const base = `/tex/${TEX[key]}`, tile = TILE[key];
+  const base = `${import.meta.env.BASE_URL}tex/${TEX[key]}`, tile = TILE[key];
   const arm = tiled(`${base}_arm.jpg`, tile, false, aniso);
   const m = new THREE.MeshStandardMaterial({
     map: tiled(`${base}_diff.jpg`, tile, true, aniso), normalMap: tiled(`${base}_nor.jpg`, tile, false, aniso),
@@ -26,10 +27,9 @@ export function pbr(key: string, aniso: number, ao?: THREE.Texture) {
 
 export interface World { bombard: THREE.Vector3; update(dt: number, t: number, cam: THREE.Camera): void; setLook(smoke: number, smokeColor: number, embers: number): void; fire(): void; puff(p: THREE.Vector3, size: number, life: number, alpha: number, vel: THREE.Vector3, color?: number): void; onFire?: () => void; }
 
-function addBox(world: RAPIER.World, b: number[], ox: number, oz: number) {
+function addBox(world: Phys, b: number[], ox: number, oz: number) {
   // b is Blender [x0,x1,y0,y1,z0,z1]; three: x=X, y=Z, z=-Y
-  world.createCollider(RAPIER.ColliderDesc.cuboid((b[1] - b[0]) / 2, (b[5] - b[4]) / 2, (b[3] - b[2]) / 2)
-    .setTranslation(ox + (b[0] + b[1]) / 2, (b[4] + b[5]) / 2, oz - (b[2] + b[3]) / 2));
+  world.box(ox + (b[0] + b[1]) / 2, (b[4] + b[5]) / 2, oz - (b[2] + b[3]) / 2, (b[1] - b[0]) / 2, (b[5] - b[4]) / 2, (b[3] - b[2]) / 2);
 }
 
 function rng(seed: number) { return () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }; }
@@ -49,12 +49,12 @@ function smokeTexture() {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
 
-export async function buildWorld(scene: THREE.Scene, physics: RAPIER.World, aniso: number, quality: number): Promise<World> {
+export async function buildWorld(scene: THREE.Scene, physics: Phys, aniso: number, quality: number): Promise<World> {
   const loader = new GLTFLoader();
-  const aoTex = (n: string) => { const t = tl.load(`/models/${n}_ao.jpg`); t.flipY = false; t.channel = 1; return t; };
+  const aoTex = (n: string) => { const t = tl.load(`${import.meta.env.BASE_URL}models/${n}_ao.jpg`); t.flipY = false; t.channel = 1; return t; };
   const matsFor = (n: string) => { const ao = aoTex(n); return { stone: pbr('stone', aniso, ao), brick: pbr('brick', aniso, ao), floor: pbr('floor', aniso, ao), wood: pbr('wood', aniso, ao) } as Record<string, THREE.Material>; };
 
-  const [hero, outer, inner] = await Promise.all(['outer_hero', 'outer', 'inner'].map((n) => loader.loadAsync(`/models/${n}.glb`)));
+  const [hero, outer, inner] = await Promise.all(['outer_hero', 'outer', 'inner'].map((n) => fetchBin(`${import.meta.env.BASE_URL}models/${n}.json`).then((b) => loader.parseAsync(b, ''))));
   const N = quality > 1 ? 7 : 4; // modules each side
 
   const place = (gltf: { scene: THREE.Group }, name: string, x: number, zs: number[], collideWithin: number) => {
@@ -76,7 +76,7 @@ export async function buildWorld(scene: THREE.Scene, physics: RAPIER.World, anis
   place(outer, 'outer', 0, outerZ, 60);
   place(inner, 'inner', 24, innerZ, 90);
   // play area limits on the walkway
-  [-52, 52].forEach((z) => physics.createCollider(RAPIER.ColliderDesc.cuboid(6, 4, 0.3).setTranslation(0, 10, z)));
+  [-52, 52].forEach((z) => physics.box(0, 10, z, 6, 4, 0.3));
 
   // --- ground: camp plain, moat, terraces, city slope ---
   const mud = pbr('mud', aniso) as THREE.MeshStandardMaterial;
@@ -85,13 +85,13 @@ export async function buildWorld(scene: THREE.Scene, physics: RAPIER.World, anis
     const uv = g.attributes.uv as THREE.BufferAttribute;
     for (let i = 8; i < 12; i++) uv.setXY(i, uv.getX(i) * (x1 - x0), uv.getY(i) * 1000);
     const m = new THREE.Mesh(g, mat); m.position.set((x0 + x1) / 2, y - depth / 2, 0); m.receiveShadow = true; scene.add(m);
-    if (collide) physics.createCollider(RAPIER.ColliderDesc.cuboid((x1 - x0) / 2, depth / 2, 500).setTranslation((x0 + x1) / 2, y - depth / 2, 0));
+    if (collide) physics.box((x0 + x1) / 2, y - depth / 2, 0, (x1 - x0) / 2, depth / 2, 500);
   };
   slab(-900, -38, 0, 8, false);           // camp plain
   slab(-38, -20, -5, 3);                  // moat bed
   slab(-20, -2.4, 1.2, 9);                // terrace in front of the outer wall
   slab(2.4, 21.6, 2.6, 9);                // peribolos between the walls
-  physics.createCollider(RAPIER.ColliderDesc.cuboid(30, 0.5, 500).setTranslation(-68, -0.5, 0));
+  physics.box(-68, -0.5, 0, 30, 0.5, 500);
   const water = new THREE.Mesh(new THREE.PlaneGeometry(18, 1000), new THREE.MeshStandardMaterial({ color: 0x1c2018, roughness: 0.08, metalness: 0.6 }));
   water.rotation.x = -Math.PI / 2; water.position.set(-29, -2.4, 0); scene.add(water);
   // city ground rising to the east
@@ -135,7 +135,7 @@ export async function buildWorld(scene: THREE.Scene, physics: RAPIER.World, anis
   for (let i = 0; i < nt; i++) {
     const x = -125 - Math.pow(r(), 1.5) * 600, z = (r() - 0.5) * 1100, s = 1.2 + r() * r() * 2.2;
     d.position.set(x, 0, z); d.rotation.set(0, r() * 6, 0); d.scale.setScalar(s); d.updateMatrix(); tents.setMatrixAt(i, d.matrix);
-    const k = r(); col.set(k < 0.7 ? 0xd8cdb8 : k < 0.85 ? 0xa03828 : k < 0.95 ? 0x4a6a48 : 0xc8a850); tents.setColorAt(i, col);
+    const k = r(); col.set(k < 0.7 ? 0x8a8272 : k < 0.85 ? 0x70281c : k < 0.95 ? 0x34482f : 0x8a7438); tents.setColorAt(i, col);
   }
   tents.castShadow = true; scene.add(tents);
   // the Sultan's pavilion and campfires

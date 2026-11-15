@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import RAPIER from '@dimforge/rapier3d-compat';
+import { Phys } from './phys';
+import { load, save } from './store';
 import { Player } from './player';
 import { World } from './world';
 import { Enemy, Kind } from './enemies';
@@ -23,7 +24,7 @@ interface Bolt { m: THREE.Mesh; v: THREE.Vector3; life: number; }
 
 export class Game {
   state: 'menu' | 'intro' | 'fight' | 'between' | 'dead' | 'won' = 'menu';
-  diff = Number(localStorage.getItem('j1453.diff') ?? 1);
+  diff = Number(load('diff') ?? 1);
   hp = 100; ammo = 24; loaded = true; reloading = false; reloadT = 0; weapon: 0 | 1 = 0; switchT = 1; pending: 0 | 1 = 0;
   wave = 0; stateT = 0; lastHurt = 0; time = 0;
   private enemies: Enemy[] = []; private queue: Spawn[] = []; private spawnT = 0; private sniperI = 0;
@@ -34,20 +35,20 @@ export class Game {
   private ray = new THREE.Raycaster(); private subT = 0; private bannerT = 0; private ramI = 0; private stepT = 0;
   private boltG = new THREE.CylinderGeometry(0.012, 0.012, 0.5, 5); private boltM = new THREE.MeshStandardMaterial({ color: 0x3a2a1c });
 
-  constructor(private scene: THREE.Scene, private camera: THREE.PerspectiveCamera, private physics: RAPIER.World, private player: Player, private world: World, dom: HTMLElement) {
+  constructor(private scene: THREE.Scene, private camera: THREE.PerspectiveCamera, private physics: Phys, private player: Player, private world: World, dom: HTMLElement) {
     this.boltG.rotateX(Math.PI / 2);
     this.vm.add(this.arq.group, this.kil.group); const fill = new THREE.PointLight(0xffd0a0, 0.5, 2.2, 1.5); fill.position.set(-0.3, 0.3, 0.2); this.vm.add(fill); camera.add(this.vm); scene.add(camera); scene.add(this.flash);
     const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d')!; const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
     gr.addColorStop(0, 'rgba(255,240,200,1)'); gr.addColorStop(0.3, 'rgba(255,170,60,0.8)'); gr.addColorStop(1, 'rgba(255,100,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
     const fm = new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, toneMapped: false }); fm.color.multiplyScalar(4);
     this.flashSprite = new THREE.Sprite(fm); this.flashSprite.visible = false; scene.add(this.flashSprite);
-    dom.addEventListener('mousedown', (e) => { if (!player.locked) return; if (e.button === 0) { this.fireHeld = true; this.primary(); } if (e.button === 2) this.aimHeld = true; });
+    dom.addEventListener('mousedown', (e) => { if (!player.active) return; if (e.button === 0) { this.fireHeld = true; this.primary(); } if (e.button === 2) this.aimHeld = true; });
     addEventListener('mouseup', (e) => { if (e.button === 0) this.fireHeld = false; if (e.button === 2) this.aimHeld = false; });
     dom.addEventListener('contextmenu', (e) => e.preventDefault());
     addEventListener('keydown', (e) => {
-      if (e.code === 'KeyR') this.startReload(); if (e.code === 'Digit1') this.switchTo(0); if (e.code === 'Digit2' || e.code === 'KeyQ') this.switchTo(this.weapon === 1 && e.code === 'KeyQ' ? 0 : 1);
+      if (e.code === 'KeyR') this.startReload(); if (e.code === 'KeyF' || e.code === 'Enter') this.primary(); if (e.code === 'KeyE') this.aimHeld = !this.aimHeld; if (e.code === 'Digit1') this.switchTo(0); if (e.code === 'Digit2' || e.code === 'KeyQ') this.switchTo(this.weapon === 1 && e.code === 'KeyQ' ? 0 : 1);
     });
-    addEventListener('wheel', () => { if (player.locked) this.switchTo(this.weapon ? 0 : 1); });
+    addEventListener('wheel', () => { if (player.active) this.switchTo(this.weapon ? 0 : 1); });
     this.kil.group.visible = false; this.hud();
   }
 
@@ -68,9 +69,11 @@ export class Game {
   private say(k: string) { $('sub').textContent = t(k); $('sub').style.opacity = '1'; this.subT = 4.5; }
 
   // ---------- weapons ----------
-  private switchTo(w: 0 | 1) { if (w === this.weapon && this.switchT >= 1) return; this.pending = w; if (this.switchT >= 1) this.switchT = 0; this.reloading = false; this.slashT = -1; }
-  private startReload() { if (this.weapon !== 0 || this.loaded || this.reloading || this.ammo <= 0 || this.switchT < 1 || !this.player.enabled) return; this.reloading = true; this.reloadT = 0; this.ramI = 0; sfx.click(); }
-  private primary() {
+  setAim(b: boolean) { this.aimHeld = b; }
+  swap() { this.switchTo(this.weapon ? 0 : 1); }
+  switchTo(w: 0 | 1) { if (w === this.weapon && this.switchT >= 1) return; this.pending = w; if (this.switchT >= 1) this.switchT = 0; this.reloading = false; this.slashT = -1; }
+  startReload() { if (this.weapon !== 0 || this.loaded || this.reloading || this.ammo <= 0 || this.switchT < 1 || !this.player.enabled) return; this.reloading = true; this.reloadT = 0; this.ramI = 0; sfx.click(); }
+  primary() {
     if (this.state === 'menu' || this.state === 'won' || !this.player.enabled || this.switchT < 1) return;
     if (this.weapon === 1) { if (this.slashT < 0 && !this.blocking) { this.slashT = 0; this.slashHit = false; sfx.swing(); } return; }
     if (this.reloading) return;
@@ -79,7 +82,7 @@ export class Game {
     const cam = this.camera, spread = lerp(0.022, 0.004, this.aim);
     const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion); dir.x += (Math.random() - 0.5) * spread; dir.y += (Math.random() - 0.5) * spread; dir.normalize();
     const origin = cam.position.clone(); const muzzle = this.arq.group.localToWorld(this.arq.muzzleLocal.clone());
-    const hit = this.physics.castRay(new RAPIER.Ray(origin, dir), 400, true, undefined, undefined, undefined, this.player.body);
+    const hit = this.physics.ray(origin, dir, 400);
     let maxD = hit ? hit.timeOfImpact : 400; let target: Enemy | null = null, head = false; const r = new THREE.Ray(origin, dir);
     for (const e of this.enemies) { const h = e.hitTest(r, maxD); if (h) { maxD = h.d; target = e; head = h.head; } }
     const p = origin.clone().addScaledVector(dir, maxD);
@@ -131,15 +134,17 @@ export class Game {
   }
   private los(from: THREE.Vector3, to: THREE.Vector3) {
     const d = to.clone().sub(from), len = d.length(); d.normalize();
-    const h = this.physics.castRay(new RAPIER.Ray(from, d), len, true, undefined, undefined, undefined, this.player.body); return !h || h.timeOfImpact > len - 0.4;
+    const h = this.physics.ray(from, d, len); return !h || h.timeOfImpact > len - 0.4;
   }
   private updateEnemies(dt: number) {
     const p = this.player.position, eye = this.camera.position, d = DIFF[this.diff];
-    let alive = 0;
+    let alive = 0; const frozen = this.state === 'dead' || this.state === 'won';
+    let attackers = 0; for (const e of this.enemies) if (!e.dead && (e.state === 'windup' || e.state === 'recover')) attackers++;
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const e = this.enemies[i];
       if (e.dead) { e.animate(dt, false); if (e.deadT > 13) { this.scene.remove(e.root); this.enemies.splice(i, 1); } continue; }
-      alive++; e.stateT += dt; e.cooldown -= dt; const pos = e.root.position; let moving = false;
+      alive++; if (frozen) { e.state = 'move'; e.animate(dt, false); continue; }
+      e.stateT += dt; e.cooldown -= dt; const pos = e.root.position; let moving = false;
       const dx = p.x - pos.x, dz = p.z - pos.z, dist = Math.hypot(dx, dz), sameLevel = Math.abs(p.y - pos.y) < 1.2;
       const ranged = e.kind === 'crossbow' || e.kind === 'sniper'; const chest = pos.clone().setY(pos.y + 1.35);
       let face = Math.atan2(-dx, -dz);
@@ -157,7 +162,7 @@ export class Game {
           const see = this.los(chest, eye);
           if (see && e.cooldown <= 0 && (e.static || dist < 26)) { e.state = 'aim'; e.stateT = 0; }
           else if (!e.static && (!see || dist > 20)) moving = true;
-        } else if (dist < e.reach && sameLevel) { if (e.cooldown <= 0) { e.state = 'windup'; e.stateT = 0; } }
+        } else if (dist < e.reach && sameLevel) { if (e.cooldown <= 0 && attackers < 2) { e.state = 'windup'; e.stateT = 0; attackers++; } }
         else moving = true;
         if (moving) {
           const tg = this.navTarget(e, p); const mx = tg.x - pos.x, mz = tg.z - pos.z, ml = Math.hypot(mx, mz) || 1; const sp = e.speed * dt;
@@ -171,7 +176,7 @@ export class Game {
     }
     for (let i = this.bolts.length - 1; i >= 0; i--) {
       const b = this.bolts[i]; b.life -= dt; const step = b.v.clone().multiplyScalar(dt), len = step.length();
-      const h = this.physics.castRay(new RAPIER.Ray(b.m.position, step.clone().normalize()), len, true, undefined, undefined, undefined, this.player.body);
+      const h = this.physics.ray(b.m.position, step.clone().normalize(), len);
       const toEye = eye.clone().sub(b.m.position); const along = THREE.MathUtils.clamp(toEye.dot(step) / (len * len), 0, 1);
       const closest = b.m.position.clone().addScaledVector(step, along); const body = closest.clone(); body.y = THREE.MathUtils.clamp(body.y, p.y + 0.2, eye.y + 0.1);
       const hitP = Math.hypot(closest.x - eye.x, closest.z - eye.z) < 0.4 && closest.y > p.y && closest.y < eye.y + 0.25;
@@ -183,10 +188,10 @@ export class Game {
     // spawning
     if (this.state === 'fight') {
       this.spawnT -= dt;
-      if (this.queue.length && alive < 6 && this.spawnT <= 0) { this.spawn(this.queue.shift()!); this.spawnT = 1.8 + Math.random() * 1.5; }
+      if (this.queue.length && alive < 6 && this.spawnT <= 0) { this.spawn(this.queue.shift()!); this.spawnT = (this.diff === 2 ? 2.2 : 3.2) + Math.random() * 2.2; }
       if (!this.queue.length && alive === 0) {
-        this.wave++; this.state = this.wave >= WAVES.length ? 'won' : 'between'; this.stateT = 0; setMusic(true, 0); localStorage.setItem('j1453.wave', String(this.wave));
-        if (this.state === 'won') { this.player.enabled = false; $('win').style.opacity = '1'; $('win').style.pointerEvents = 'auto'; $('winText').innerHTML = `<h1>${t('win1')}</h1><div class="rule"></div><p>${t('win2')}</p><p class="small">${t('again')}</p>`; document.exitPointerLock(); }
+        this.wave++; this.state = this.wave >= WAVES.length ? 'won' : 'between'; this.stateT = 0; setMusic(true, 0); save('wave', String(this.wave));
+        if (this.state === 'won') { this.player.enabled = false; $('win').style.opacity = '1'; $('win').style.pointerEvents = 'auto'; $('winText').innerHTML = `<h1>${t('win1')}</h1><div class="rule"></div><p>${t('win2')}</p><p class="small">${t('again')}</p>`; document.exitPointerLock?.(); }
         else { this.ammo = Math.min(30, this.ammo + 10); if (this.wave === 2) setTimeout(() => { this.say('s_gun'); this.banner(t('bombard'), '', 4); setTimeout(() => this.world.fire(), 1500); }, 1500); }
       }
     }
