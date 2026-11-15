@@ -4,6 +4,7 @@ import { Phys } from './phys';
 export class Player {
   yaw = Math.PI / 2; pitch = -0.05; enabled = true; speedMul = 1; sens = 1;
   private keys = new Set<string>(); private feet = new THREE.Vector3();
+  private jumpHeld = false; private airJumps = 1;
   private vy = 0; private grounded = false; private bob = 0;
   shake = 0; locked = false; noLock = false;
   stick = new THREE.Vector2(); jumpQueued = false; // touch input
@@ -29,10 +30,11 @@ export class Player {
     if (lx || ly) this.look(lx * 900 * dt, ly * 600 * dt);
     let f = (k.has('KeyW') ? 1 : 0) - (k.has('KeyS') ? 1 : 0) - this.stick.y, s = (k.has('KeyD') ? 1 : 0) - (k.has('KeyA') ? 1 : 0) + this.stick.x;
     const sprint = k.has('ShiftLeft') || k.has('ShiftRight') || this.stick.length() > 0.92;
-    const speed = (sprint ? 7.8 : 4.7) * this.speedMul * (this.enabled ? 1 : 0);
+    const speed = (sprint ? 11 : 7) * this.speedMul * (this.enabled ? 1 : 0);
     const dir = new THREE.Vector3(s, 0, -f); if (dir.lengthSq() > 1) dir.normalize();
     dir.applyAxisAngle(THREE.Object3D.DEFAULT_UP, this.yaw);
-    if (this.grounded) { this.vy = -2; if ((k.has('Space') || this.jumpQueued) && this.enabled) this.vy = 4.8; } else this.vy -= 13 * dt;
+    const jump = (k.has('Space') || this.jumpQueued) && this.enabled, pressed = jump && !this.jumpHeld; this.jumpHeld = jump;
+    if (this.grounded) { this.vy = -2; this.airJumps = 1; if (pressed) this.vy = 6.2; } else { this.vy -= 15 * dt; if (pressed && this.airJumps > 0) { this.airJumps--; this.vy = 6.2; } }
     this.jumpQueued = false;
     const res = this.phys.move(this.feet, 0.32, 1.75, new THREE.Vector3(dir.x * speed * dt, this.vy * dt, dir.z * speed * dt), this.grounded);
     this.grounded = res.grounded; if (res.ceiling) this.vy = 0;

@@ -39,6 +39,9 @@ function thump(f0: number, f1: number, dur: number, gain: number, dest?: AudioNo
 }
 export const sfx = {
   shot() { noise(0.09, 6000, 0.5, 1.4, 'highpass'); noise(0.9, 2600, 0.7, 1.1, 'lowpass', 180); thump(140, 38, 0.5, 1.2); },
+  ak() { noise(0.05, 5000, 0.5, 0.9, 'highpass'); noise(0.22, 2200, 0.8, 0.8, 'lowpass', 300); thump(150, 50, 0.12, 0.7); },
+  pickup() { thump(520, 1040, 0.18, 0.25); thump(780, 1560, 0.25, 0.18, undefined, 0.08); },
+  capture() { [392, 523, 659, 784].forEach((f, i) => thump(f, f, 0.5, 0.22, undefined, i * 0.12)); },
   enemyShot(dist: number) { const g = Math.max(0.08, 1 - dist / 70); noise(0.6, 1800, 0.7, 0.7 * g, 'lowpass', 160); thump(110, 40, 0.35, 0.6 * g); },
   bombard() { noise(2.6, 900, 0.6, 1.2, 'lowpass', 60); thump(70, 22, 2.2, 1.5); noise(1.8, 400, 0.5, 0.7, 'lowpass', 50, undefined, 0.5); },
   click() { noise(0.04, 3500, 3, 0.25, 'bandpass'); },

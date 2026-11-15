@@ -197,6 +197,7 @@ export async function buildWorld(scene: THREE.Scene, physics: Phys, aniso: numbe
   const spawn = (p: THREE.Vector3, size: number, life: number, up: number, alpha: number, src: number, vel?: THREE.Vector3) => {
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeTex, transparent: true, depthWrite: false, opacity: 0, color: smokeCol.clone().multiplyScalar(0.75 + Math.random() * 0.4), rotation: Math.random() * 6 }));
     s.position.copy(p).add(new THREE.Vector3((Math.random() - 0.5) * size * 0.4, 0, (Math.random() - 0.5) * size * 0.4));
+    if (puffs.length > 240) { const o = puffs.shift()!; scene.remove(o.s); o.s.material.dispose(); }
     scene.add(s); puffs.push({ s, life: 0, max: life, v: vel ?? new THREE.Vector3(0, up, 0), size, grow: size * (src === -1 && size < 3 ? 0.9 : 0.22), alpha, src });
   };
   // pre-warm so columns exist on the first frame

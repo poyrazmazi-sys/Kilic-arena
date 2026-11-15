@@ -14,7 +14,7 @@ import { t as tr, lang, setLang } from './i18n';
 const q = new URLSearchParams(location.search);
 const shot = q.has('shot');
 const mobile = /iPad|iPhone|Android/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.userAgent));
-const quality = Number(q.get('q') ?? (mobile ? 1 : 2)); // 0 low, 1 medium, 2 high, 3 ultra
+const quality = Number(q.get('q') ?? 1); // 0 low, 1 medium, 2 high, 3 ultra
 const statusEl = document.getElementById('status')!, overlay = document.getElementById('overlay')!, hint = document.getElementById('hint')!, statsEl = document.getElementById('stats')!;
 
 async function main() {
@@ -146,7 +146,7 @@ async function main() {
     sun.target.position.copy(camera.position); sun.position.copy(camera.position).addScaledVector(sunDir, 300);
     composer.render(dt);
     frames++; ft += dt; if (ft > 0.5) { const now = performance.now(); const fps = frames / ((now - realT) / 1000); statsEl.textContent = `${Math.round(fps)} fps`; realT = now;
-      if (!shot && t > 6) { slow = fps < 42 ? slow + 1 : 0; if (slow >= 4 && scale > 0.5) { scale *= 0.82; slow = 0; renderer.setPixelRatio(basePR * scale); composer.setSize(innerWidth, innerHeight); } } frames = 0; ft = 0; (window as any).__ready = t > 1.5; }
+      if (!shot && t > 6) { slow = fps < 52 ? slow + 1 : 0; if (slow >= 3 && scale > 0.45) { scale *= 0.82; slow = 0; renderer.setPixelRatio(basePR * scale); composer.setSize(innerWidth, innerHeight); } } frames = 0; ft = 0; (window as any).__ready = t > 1.5; }
     requestAnimationFrame(frame);
   }
   frame();

@@ -41,6 +41,18 @@ export function makeArquebus() {
   return out;
 }
 
+export function makeRifle() {
+  const g = new THREE.Group();
+  const right = arm(); right.position.set(0.012, -0.1, 0.03); right.rotation.set(0.45, -0.3, 0); g.add(right);
+  const left = arm(); left.position.set(0.0, -0.045, -0.3); left.rotation.set(0.5, 0.8, 0.3); g.add(left);
+  const out = { group: g, left, serp: new THREE.Object3D() as THREE.Object3D, muzzleLocal: new THREE.Vector3(0.012, 0.022, -0.6) };
+  fetchBin(`${import.meta.env.BASE_URL}models/rifle.json`).then((buf) => new GLTFLoader().parseAsync(buf, '')).then((gltf) => {
+    gltf.scene.traverse((o) => { o.frustumCulled = false; }); g.add(gltf.scene);
+  });
+  g.traverse((o) => { o.frustumCulled = false; });
+  return out;
+}
+
 export function makeKilic() {
   const g = new THREE.Group();
   const a = arm(); a.position.set(0, -0.01, 0.0); a.rotation.set(0.9, 0, 0); g.add(a);

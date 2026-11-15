@@ -53,8 +53,8 @@ export class Enemy {
     }
     this.mixer = new THREE.AnimationMixer(model);
     for (const n in clips) this.actions[n] = this.mixer.clipAction(clips[n]);
-    this.maxHp = this.hp = cap ? 500 * diffHp : 100;
-    this.speed = cap ? 2.8 : kind === 'spear' ? 3.5 + Math.random() * 0.6 : 2.6;
+    this.maxHp = this.hp = cap ? 1100 * diffHp : 100;
+    this.speed = cap ? 3.6 : kind === 'spear' ? 4.6 + Math.random() * 0.8 : 3.4;
     this.static = kind === 'sniper';
     this.play('idle', 0); this.mixer.update(Math.random());
   }
