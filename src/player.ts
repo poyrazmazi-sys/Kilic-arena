@@ -4,7 +4,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 export class Player {
   yaw = Math.PI / 2; pitch = -0.05;
   private keys = new Set<string>();
-  private body: RAPIER.RigidBody; private col: RAPIER.Collider; private cc: RAPIER.KinematicCharacterController;
+  body: RAPIER.RigidBody; enabled = true; speedMul = 1; sens = 1; private col: RAPIER.Collider; private cc: RAPIER.KinematicCharacterController;
   private vy = 0; private grounded = false; private bob = 0;
   shake = 0;
   locked = false;
@@ -19,7 +19,7 @@ export class Player {
     addEventListener('blur', () => this.keys.clear());
     dom.addEventListener('mousemove', (e) => {
       if (!this.locked) return;
-      this.yaw -= e.movementX * 0.0022; this.pitch -= e.movementY * 0.0022;
+      this.yaw -= e.movementX * 0.0022 * this.sens; this.pitch -= e.movementY * 0.0022 * this.sens;
       this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch));
     });
     document.addEventListener('pointerlockchange', () => { this.locked = document.pointerLockElement === dom; });
@@ -32,10 +32,10 @@ export class Player {
     const k = this.keys;
     const f = (k.has('KeyW') ? 1 : 0) - (k.has('KeyS') ? 1 : 0), s = (k.has('KeyD') ? 1 : 0) - (k.has('KeyA') ? 1 : 0);
     const sprint = k.has('ShiftLeft') || k.has('ShiftRight');
-    const speed = sprint ? 6.2 : 3.6;
+    const speed = (sprint ? 6.2 : 3.6) * this.speedMul * (this.enabled ? 1 : 0);
     const dir = new THREE.Vector3(s, 0, -f); if (dir.lengthSq() > 0) dir.normalize();
     dir.applyAxisAngle(THREE.Object3D.DEFAULT_UP, this.yaw);
-    if (this.grounded) { this.vy = -1; if (k.has('Space')) this.vy = 4.6; } else this.vy -= 13 * dt;
+    if (this.grounded) { this.vy = -1; if (k.has('Space') && this.enabled) this.vy = 4.6; } else this.vy -= 13 * dt;
     this.cc.computeColliderMovement(this.col, { x: dir.x * speed * dt, y: this.vy * dt, z: dir.z * speed * dt });
     const m = this.cc.computedMovement(); this.grounded = this.cc.computedGrounded();
     const t = this.body.translation();

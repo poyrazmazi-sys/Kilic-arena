@@ -11,13 +11,13 @@ export interface Look {
 
 export const LOOKS: Look[] = [
   { name: 'Golden haze', sky: 'belfast_sunset_puresky', sunColor: 0xffa860, sunIntensity: 6, envIntensity: 0.9,
-    fogTint: 0xe8a860, fogTintMix: 0.45, fogDensity: 0.0042, exposure: 1.0, saturation: 0.08, contrast: 0.06,
+    fogTint: 0xe8a860, fogTintMix: 0.7, fogDensity: 0.0042, exposure: 1.0, saturation: 0.08, contrast: 0.06,
     smoke: 1, smokeColor: 0xcfa27a, embers: 0.3, bloom: 0.9, minElevation: 7 },
   { name: 'Fire and teal', sky: 'industrial_sunset_puresky', sunColor: 0xff8a45, sunIntensity: 7, envIntensity: 0.7,
-    fogTint: 0x8a4a30, fogTintMix: 0.5, fogDensity: 0.006, exposure: 0.92, saturation: 0.15, contrast: 0.2,
+    fogTint: 0x9a5030, fogTintMix: 0.7, fogDensity: 0.006, exposure: 0.92, saturation: 0.15, contrast: 0.2,
     smoke: 1.8, smokeColor: 0x6a5048, embers: 1, bloom: 1.2, minElevation: 6 },
   { name: 'Calm before battle', sky: 'evening_road_01_puresky', sunColor: 0xffc9a0, sunIntensity: 4.5, envIntensity: 1.0,
-    fogTint: 0xd8c0b8, fogTintMix: 0.3, fogDensity: 0.003, exposure: 1.05, saturation: -0.12, contrast: 0.0,
+    fogTint: 0xe0c0a8, fogTintMix: 0.5, fogDensity: 0.003, exposure: 1.05, saturation: -0.12, contrast: 0.0,
     smoke: 0.5, smokeColor: 0xc8b8a8, embers: 0.1, bloom: 0.6, minElevation: 9 },
 ];
 
@@ -43,7 +43,7 @@ export function loadSky(name: string): Promise<SkyData> {
     const row = Math.floor(h * 0.47); let r = 0, g = 0, b = 0, n = 0;
     for (let x = 0; x < w; x += 4) { const i = (row * w + x) * st; r += Math.min(data[i], 4); g += Math.min(data[i + 1], 4); b += Math.min(data[i + 2], 4); n++; }
     horizon.setRGB(r / n, g / n, b / n);
-    const m = Math.max(horizon.r, horizon.g, horizon.b); if (m > 0.9) horizon.multiplyScalar(0.9 / m);
+    const m = Math.max(horizon.r, horizon.g, horizon.b); if (m > 0.55) horizon.multiplyScalar(0.55 / m);
     return { tex, sunAzimuth: (bu - 0.5) * Math.PI * 2, sunElevation: Math.abs(elevation), horizon };
   }));
   return cache.get(name)!;

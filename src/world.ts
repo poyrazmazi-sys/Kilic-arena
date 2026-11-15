@@ -2,9 +2,9 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import RAPIER from '@dimforge/rapier3d-compat';
 
-const TILE: Record<string, number> = { stone: 3.2, brick: 1.6, floor: 2.4, wood: 2.0, mud: 6 };
+const TILE: Record<string, number> = { stone: 3.2, brick: 1.6, floor: 2.4, wood: 2.0, mud: 11 };
 const TEX: Record<string, string> = { stone: 'large_sandstone_blocks', brick: 'medieval_red_brick', floor: 'cobblestone_large_01', wood: 'weathered_brown_planks', mud: 'brown_mud_02' };
-const TINT: Record<string, number> = { stone: 0xd8d2c6, brick: 0xc9b0a0, floor: 0xb0a898, wood: 0x9a8670, mud: 0x8a7868 };
+const TINT: Record<string, number> = { stone: 0xd8d2c6, brick: 0xa89080, floor: 0xb0a898, wood: 0x9a8670, mud: 0x6a5a48 };
 
 const tl = new THREE.TextureLoader();
 function tiled(url: string, tile: number, srgb: boolean, aniso: number) {
@@ -20,11 +20,11 @@ export function pbr(key: string, aniso: number, ao?: THREE.Texture) {
     map: tiled(`${base}_diff.jpg`, tile, true, aniso), normalMap: tiled(`${base}_nor.jpg`, tile, false, aniso),
     roughnessMap: arm, metalness: 0, color: TINT[key],
   });
-  if (ao) { m.aoMap = ao; m.aoMapIntensity = 1.0; } else { m.aoMap = arm; }
+  if (ao) { m.aoMap = ao; m.aoMapIntensity = 0.75; } else { m.aoMap = arm; }
   return m;
 }
 
-export interface World { bombard: THREE.Vector3; update(dt: number, t: number, cam: THREE.Camera): void; setLook(smoke: number, smokeColor: number, embers: number): void; fire(): void; onFire?: () => void; }
+export interface World { bombard: THREE.Vector3; update(dt: number, t: number, cam: THREE.Camera): void; setLook(smoke: number, smokeColor: number, embers: number): void; fire(): void; puff(p: THREE.Vector3, size: number, life: number, alpha: number, vel: THREE.Vector3, color?: number): void; onFire?: () => void; }
 
 function addBox(world: RAPIER.World, b: number[], ox: number, oz: number) {
   // b is Blender [x0,x1,y0,y1,z0,z1]; three: x=X, y=Z, z=-Y
@@ -128,15 +128,28 @@ export async function buildWorld(scene: THREE.Scene, physics: RAPIER.World, anis
   church(260, -120, 1); church(420, 210, 0.8); church(190, 330, 0.6); church(620, -380, 1.2); church(980, -260, 2.6);
 
   // --- Ottoman camp: tents, banners, earthworks, bombard ---
-  const nt = quality > 1 ? 900 : 450;
+  const woodM0 = pbr('wood', aniso);
+  const nt = quality > 1 ? 1500 : 700;
   const tentG = new THREE.LatheGeometry([new THREE.Vector2(0, 3.4), new THREE.Vector2(0.25, 3.2), new THREE.Vector2(2.4, 1.9), new THREE.Vector2(2.4, 0)], 14);
   const tents = new THREE.InstancedMesh(tentG, new THREE.MeshStandardMaterial({ roughness: 0.9, side: THREE.DoubleSide }), nt);
   for (let i = 0; i < nt; i++) {
-    const x = -170 - Math.pow(r(), 0.8) * 650, z = (r() - 0.5) * 1300, s = 0.8 + r() * 0.9;
+    const x = -125 - Math.pow(r(), 1.5) * 600, z = (r() - 0.5) * 1100, s = 1.2 + r() * r() * 2.2;
     d.position.set(x, 0, z); d.rotation.set(0, r() * 6, 0); d.scale.setScalar(s); d.updateMatrix(); tents.setMatrixAt(i, d.matrix);
     const k = r(); col.set(k < 0.7 ? 0xd8cdb8 : k < 0.85 ? 0xa03828 : k < 0.95 ? 0x4a6a48 : 0xc8a850); tents.setColorAt(i, col);
   }
   tents.castShadow = true; scene.add(tents);
+  // the Sultan's pavilion and campfires
+  const pav = new THREE.Mesh(tentG, new THREE.MeshStandardMaterial({ color: 0x9a2a1c, roughness: 0.85, side: THREE.DoubleSide })); pav.position.set(-330, 0, 40); pav.scale.set(7, 5.5, 7); scene.add(pav);
+  const pavTop = new THREE.Mesh(new THREE.SphereGeometry(1.2, 10, 8), new THREE.MeshStandardMaterial({ color: 0xd8a840, roughness: 0.3, metalness: 1 })); pavTop.position.set(-330, 19.5, 40); scene.add(pavTop);
+  const fc = document.createElement('canvas'); fc.width = fc.height = 64; const fg = fc.getContext('2d')!; const fgr = fg.createRadialGradient(32, 32, 0, 32, 32, 32);
+  fgr.addColorStop(0, 'rgba(255,220,150,1)'); fgr.addColorStop(0.25, 'rgba(255,140,40,0.7)'); fgr.addColorStop(1, 'rgba(255,90,0,0)'); fg.fillStyle = fgr; fg.fillRect(0, 0, 64, 64);
+  const fireM = new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(fc), blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }); fireM.color.multiplyScalar(2.5);
+  const fires: THREE.Sprite[] = [];
+  for (let i = 0; i < 90; i++) { const f = new THREE.Sprite(fireM); f.position.set(-120 - Math.pow(r(), 1.4) * 520, 1.2, (r() - 0.5) * 1000); f.scale.setScalar(3 + r() * 3); scene.add(f); fires.push(f); }
+  // siege batteries: smaller guns behind wooden mantlets
+  const mant = new THREE.InstancedMesh(new THREE.BoxGeometry(0.25, 2.6, 4.2), woodM0, 40);
+  for (let i = 0; i < 40; i++) { d.position.set(-96 - r() * 10, 1.3, -260 + i * 13 + r() * 4); d.rotation.set(0, (r() - 0.5) * 0.3, 0.18); d.scale.setScalar(1); d.updateMatrix(); mant.setMatrixAt(i, d.matrix); }
+  mant.castShadow = true; scene.add(mant);
   const woodM = pbr('wood', aniso);
   // gabions / earthwork line in front of the guns
   const earth = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.9, 1.0, 1.8, 10), mud, 160);
@@ -183,7 +196,7 @@ export async function buildWorld(scene: THREE.Scene, physics: RAPIER.World, anis
   const spawn = (p: THREE.Vector3, size: number, life: number, up: number, alpha: number, src: number, vel?: THREE.Vector3) => {
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeTex, transparent: true, depthWrite: false, opacity: 0, color: smokeCol.clone().multiplyScalar(0.75 + Math.random() * 0.4), rotation: Math.random() * 6 }));
     s.position.copy(p).add(new THREE.Vector3((Math.random() - 0.5) * size * 0.4, 0, (Math.random() - 0.5) * size * 0.4));
-    scene.add(s); puffs.push({ s, life: 0, max: life, v: vel ?? new THREE.Vector3(0, up, 0), size, grow: size * 0.22, alpha, src });
+    scene.add(s); puffs.push({ s, life: 0, max: life, v: vel ?? new THREE.Vector3(0, up, 0), size, grow: size * (src === -1 && size < 3 ? 0.9 : 0.22), alpha, src });
   };
   // pre-warm so columns exist on the first frame
   const step = (dt: number) => {
@@ -201,16 +214,17 @@ export async function buildWorld(scene: THREE.Scene, physics: RAPIER.World, anis
   for (let i = 0; i < 260; i++) step(0.1);
 
   // --- embers and dust motes around the camera ---
-  const NE = 500, epos = new Float32Array(NE * 3), eseed = new Float32Array(NE);
+  const NE = 160, epos = new Float32Array(NE * 3), eseed = new Float32Array(NE);
   for (let i = 0; i < NE; i++) { epos[i * 3] = (Math.random() - 0.5) * 40; epos[i * 3 + 1] = Math.random() * 14; epos[i * 3 + 2] = (Math.random() - 0.5) * 40; eseed[i] = Math.random() * 100; }
   const eg = new THREE.BufferGeometry(); eg.setAttribute('position', new THREE.BufferAttribute(epos, 3));
-  const emat = new THREE.PointsMaterial({ color: 0xffb060, size: 0.05, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+  const emat = new THREE.PointsMaterial({ color: 0xffb060, size: 0.035, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
   emat.color.multiplyScalar(3);
   const embers = new THREE.Points(eg, emat); embers.frustumCulled = false; scene.add(embers);
 
   let flashT = 9;
   const api: World = {
     bombard,
+    puff(p, size, life, alpha, vel, color) { spawn(p, size, life, 0, alpha, -1, vel); if (color !== undefined) puffs[puffs.length - 1].s.material.color.set(color); },
     setLook(smoke, color, emb) { smokeAmt = smoke; smokeCol.set(color); emat.opacity = Math.min(1, emb); embers.visible = emb > 0.05; },
     fire() {
       flashT = 0;
@@ -230,6 +244,7 @@ export async function buildWorld(scene: THREE.Scene, physics: RAPIER.World, anis
         a.setXYZ(i, x, y, z);
       }
       a.needsUpdate = true; embers.position.set(cam.position.x, cam.position.y - 6, cam.position.z);
+      fires.forEach((f, i) => { if ((i + Math.floor(t * 12)) % 3 === 0) f.material.rotation = Math.random() * 6; });
       flags.forEach((f, fi) => {
         const p = f.geometry.attributes.position as THREE.BufferAttribute;
         for (let i = 0; i < p.count; i++) { const x = p.getX(i); p.setZ(i, Math.sin(x * 2.2 - t * 5 + fi) * 0.18 * (x / 3.2) + Math.sin(x * 5 - t * 8) * 0.04 * (x / 3.2)); }
