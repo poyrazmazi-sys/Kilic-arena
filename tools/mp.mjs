@@ -3,7 +3,7 @@ import { createRequire } from 'module';
 const { chromium } = createRequire(import.meta.url)(process.env.PW);
 const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 const ctx = await browser.newContext({ viewport: { width: 240, height: 140 } });
-const open = async (n) => { const p = await ctx.newPage(); p.on('pageerror', (e) => console.log(n, 'PAGEERR', e.message.slice(0, 300))); await p.goto('http://localhost:5174/?mock=1'); await p.waitForFunction(() => window.__ready === true, null, { timeout: 240000 }); return p; };
+const open = async (n) => { const p = await ctx.newPage(); p.on('pageerror', (e) => console.log(n, 'PAGEERR', e.message.slice(0, 300))); await p.goto('http://127.0.0.1:5174/?' + (process.env.NETQ ?? 'mock=1')); await p.waitForFunction(() => window.__ready === true, null, { timeout: 240000 }); return p; };
 const [A, Bp, C] = [await open('A'), await open('B'), await open('C')];
 const st = async (p) => p.evaluate(() => window.__state());
 await A.evaluate(() => window.__online('abcd', 'f')); await new Promise((r) => setTimeout(r, 1500));

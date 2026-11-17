@@ -6,15 +6,19 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "arena": "vite --config arena/vite.config.ts",
+    "build:arena": "vite build --config arena/vite.config.ts"
   },
   "dependencies": {
     "n8ao": "^2.0.2",
+    "peerjs": "^1.5.5",
     "postprocessing": "^6.39.6",
     "three": "^0.187.0"
   },
   "devDependencies": {
     "@types/three": "^0.187.0",
+    "peer": "^1.0.2",
     "typescript": "^7.0.2",
     "vite": "^8.3.8"
   }

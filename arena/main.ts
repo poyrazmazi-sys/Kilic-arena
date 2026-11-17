@@ -139,7 +139,8 @@ async function main() {
     if (!room) return;
     leaveOnline();
     code = c; role = wantRole; joinT = Date.now(); seen.clear(); claims.length = 0; results.length = 0; claimSeq = 0; round = 1; overT = -1; matchOver = false;
-    try { duel = await room.join('duel-' + c); } catch { banner('Could not join', 'Try again in a moment'); return; }
+    hideMenu(); banner('Connecting...', '', 15);
+    try { duel = await room.join('duel-' + c); } catch (e) { console.warn(e); showMenu(); banner('Could not connect', 'Check the code and try again', 4); return; }
     mode = role === 'f' ? 'duel' : 'watch'; mySide = 0; me = role === 'f' ? fighters[0] : null; opp = null;
     fighters.forEach((f) => { f.reset(0, f.side === 0 ? 3.4 : -3.4, f.side === 0 ? 0 : Math.PI); f.wins = 0; f.remote = false; f.root.visible = role === 'f' ? f.side === 0 : false; });
     hideMenu(); $('code').textContent = c.toUpperCase();
@@ -181,7 +182,9 @@ async function main() {
   connectRoom().then((r) => {
     room = r;
     if (!r) { $('online').classList.add('off'); $('onlineNote').textContent = 'Online duels work when this page is opened on claude.ai by someone it is shared with. You can still fight the bot.'; return; }
-    $('onlineNote').textContent = 'Host a duel and share the code, or pick an open duel below.';
+    const p2p = !!(r as any).p2p;
+    $('onlineNote').textContent = p2p ? 'Host a duel and send your friend the code. They open this same link, type the code and press Fight.' : 'Host a duel and share the code, or pick an open duel below.';
+    if (p2p) { $('openList').style.display = 'none'; return; }
     (r as any).onPeers?.((ch: { peers: readonly Peer[] }) => {
       const list = $('openList'); list.textContent = '';
       for (const p of ch.peers) {
