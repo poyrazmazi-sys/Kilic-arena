@@ -7,12 +7,12 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, dev
 page.on('console', (m) => { if (m.text().startsWith('knight')) console.log(m.text()); if (m.type() === 'error') console.log('ERR', m.text().slice(0, 300)); });
 page.on('pageerror', (e) => console.log('PAGEERR', e.message.slice(0, 300)));
 for (let i = 0; i < args.length; i += 2) {
-  await page.goto(`http://localhost:5173/?shot=1&q=${process.env.Q ?? 2}&${args[i + 1]}`);
+  await page.goto(`http://localhost:${process.env.PORT ?? 5173}/?shot=1&q=${process.env.Q ?? 2}&${args[i + 1]}`);
   await page.waitForFunction(() => window.__ready === true, null, { timeout: 240000 });
   await page.waitForTimeout(Number(process.env.WAIT ?? 1500));
   if (process.env.SIM) await page.evaluate((s) => window.__sim(Number(s)), process.env.SIM);
   if (process.env.KEY) { await page.keyboard.press(process.env.KEY); await page.waitForTimeout(Number(process.env.AFTER ?? 400)); }
   await page.screenshot({ timeout: 300000, path: `shots/${args[i]}.jpg`, quality: 88 });
-  console.log('shot', args[i], await page.evaluate(() => document.getElementById('stats').textContent));
+  console.log('shot', args[i], await page.evaluate(() => document.getElementById('stats')?.textContent ?? ''));
 }
 await browser.close();

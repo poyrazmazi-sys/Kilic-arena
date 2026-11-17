@@ -20,6 +20,24 @@ export function initAudio() {
   musicGain = ctx.createGain(); musicGain.gain.value = 0; musicGain.connect(master);
   setInterval(tick, 60);
 }
+let crowdGain: GainNode | null = null, crowdF: BiquadFilterNode | null = null;
+/** Low murmur of the crowd; `level` 0..1 swells it. */
+export function crowd(level: number) {
+  if (!ctx) return;
+  if (!crowdGain) {
+    const s = ctx.createBufferSource(); s.buffer = noiseBuf; s.loop = true; crowdF = ctx.createBiquadFilter(); crowdF.type = 'bandpass'; crowdF.frequency.value = 700; crowdF.Q.value = 0.7;
+    crowdGain = ctx.createGain(); crowdGain.gain.value = 0; s.connect(crowdF); crowdF.connect(crowdGain); crowdGain.connect(master); s.start();
+  }
+  crowdGain.gain.setTargetAtTime(0.05 + level * 0.22, ctx.currentTime, 0.25); crowdF!.frequency.setTargetAtTime(600 + level * 500, ctx.currentTime, 0.3);
+}
+export const sfx2 = {
+  flesh(heavy: boolean) { noise(heavy ? 0.22 : 0.14, 900, 1.2, heavy ? 0.9 : 0.6, 'lowpass', 140); thump(heavy ? 120 : 170, 50, 0.18, 0.6); noise(0.08, 3200, 2, 0.25, 'bandpass'); },
+  clang(big: boolean) { if (!ctx) return; [1450, 2280, 3410, 5200].forEach((f, i) => thump(f, f * 0.995, big ? 0.9 : 0.5, (big ? 0.2 : 0.13) / (i + 1))); noise(0.06, 6000, 1, 0.5, 'highpass'); },
+  whoosh(heavy: boolean) { noise(heavy ? 0.45 : 0.25, heavy ? 350 : 600, 1.2, heavy ? 0.5 : 0.35, 'bandpass', heavy ? 2200 : 3200); },
+  step() { noise(0.06, 300, 1, 0.08, 'lowpass'); },
+  gong() { if (!ctx) return; [110, 165, 220, 331].forEach((f, i) => thump(f, f * 0.99, 3, 0.35 / (i + 1))); },
+  cheer() { noise(1.8, 900, 0.5, 0.35, 'bandpass', 1300); },
+};
 export function setVolume(v: number) { if (ctx) master.gain.value = v; }
 
 function noise(dur: number, freq: number, q: number, gain: number, type: BiquadFilterType = 'lowpass', sweepTo?: number, dest?: AudioNode, when = 0) {

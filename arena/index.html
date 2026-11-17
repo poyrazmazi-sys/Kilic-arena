@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Kılıç Arena</title>
+<style>
+:root{--gold:#e2c275;--gold2:#a8843a;--ink:#f0e6cc;--bg:#120c08;--red:#b3261e;--panel:rgba(18,12,8,.82);color-scheme:dark;padding:0!important}
+html,body{margin:0;height:100%;background:var(--bg);overflow:hidden;color:var(--ink);font-family:Georgia,'Times New Roman',serif;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;overscroll-behavior:none}
+#view canvas{display:block;width:100%;height:100%}
+button{font:inherit;color:var(--ink);background:rgba(40,26,14,.7);border:1px solid var(--gold2);padding:10px 18px;letter-spacing:.12em;cursor:pointer;text-transform:uppercase;font-size:13px}
+button:hover,button:focus-visible{border-color:var(--gold);background:rgba(90,60,24,.6);outline:none}
+button.on{background:var(--gold2);color:#1a1208}
+input{font:inherit;color:var(--ink);background:rgba(0,0,0,.4);border:1px solid var(--gold2);padding:9px 12px;font-size:15px;width:150px}
+#loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:20;background:var(--bg);flex-direction:column;gap:14px}
+#loading h1,#menu h1{margin:0;font-weight:400;letter-spacing:.4em;color:var(--gold);font-size:clamp(34px,7vw,76px);text-shadow:0 3px 28px rgba(0,0,0,.8)}
+.rule{width:min(420px,70vw);height:1px;background:linear-gradient(90deg,transparent,var(--gold),transparent);margin:6px auto}
+#menu{position:fixed;inset:0;z-index:10;display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:radial-gradient(ellipse at center,rgba(18,12,8,.35),rgba(10,6,3,.9));text-align:center;padding:16px;overflow:auto}
+#menu .sub{letter-spacing:.2em;font-size:14px;opacity:.85;text-transform:uppercase}
+.card{background:var(--panel);border:1px solid rgba(168,132,58,.5);padding:16px 20px;display:flex;flex-direction:column;gap:10px;align-items:center;max-width:520px;width:100%;box-sizing:border-box}
+.card h2{margin:0;font-weight:400;font-size:15px;letter-spacing:.25em;color:var(--gold);text-transform:uppercase}
+.rowb{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center}
+.note{font-size:13px;opacity:.75;max-width:440px;line-height:1.5}
+#online.off button,#online.off input{opacity:.35;pointer-events:none}
+#openList{display:flex;flex-direction:column;gap:6px;font-size:14px;opacity:.9;width:100%}
+#openList .row{display:flex;gap:8px;align-items:center;justify-content:space-between}#openList button{padding:6px 12px;font-size:12px}
+#hud{position:fixed;inset:0;pointer-events:none;z-index:5;opacity:0;transition:opacity .5s}
+.side{position:absolute;top:calc(14px + env(safe-area-inset-top));width:min(38vw,380px);display:flex;flex-direction:column;gap:5px}
+#left{left:max(16px,env(safe-area-inset-left))}#right{right:max(16px,env(safe-area-inset-right));align-items:flex-end}
+.nm{font-size:16px;letter-spacing:.15em;text-transform:uppercase;text-shadow:0 1px 4px #000;display:flex;gap:10px;align-items:center}
+.wins{color:var(--gold);font-size:13px;letter-spacing:.2em}
+.bar{width:100%;height:12px;background:rgba(10,6,3,.6);border:1px solid var(--gold2);transform:skewX(-20deg)}
+.bar div{height:100%;background:linear-gradient(90deg,#6a120c,var(--red));transition:width .15s}
+#right .bar div{margin-left:auto;background:linear-gradient(270deg,#6a120c,var(--red))}
+.st{height:5px;border-color:rgba(168,132,58,.6)}.st div{background:linear-gradient(90deg,#8a6a24,var(--gold))!important}
+#round{position:absolute;top:calc(16px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);font-size:14px;letter-spacing:.3em;color:var(--gold);text-transform:uppercase;text-shadow:0 1px 4px #000}
+#watch{position:absolute;top:calc(40px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);font-size:12px;letter-spacing:.1em;opacity:.85;text-shadow:0 1px 4px #000;white-space:nowrap}
+#banner{position:absolute;top:30%;left:0;right:0;text-align:center;opacity:0;transition:opacity .6s;text-shadow:0 3px 18px #000}
+#bannerA{font-size:clamp(30px,6vw,64px);letter-spacing:.3em;color:var(--gold);text-transform:uppercase}#bannerB{letter-spacing:.25em;font-size:15px;text-transform:uppercase}
+#pop{position:absolute;top:44%;left:50%;transform:translate(-50%,0);font-size:22px;letter-spacing:.2em;text-transform:uppercase;color:#fff;opacity:0;transition:opacity .25s,transform .25s;text-shadow:0 2px 10px #000}
+#hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);font-size:12px;opacity:.7;letter-spacing:.06em;text-shadow:0 1px 3px #000;white-space:nowrap}
+#bMenu{position:fixed;z-index:6;right:max(16px,env(safe-area-inset-right));bottom:calc(14px + env(safe-area-inset-bottom));pointer-events:auto;padding:8px 12px;font-size:11px}
+#touch{display:none;position:fixed;inset:0;z-index:4;pointer-events:none}
+#touch .tb{position:absolute;pointer-events:auto;width:84px;height:84px;border-radius:50%;border:1px solid var(--gold2);background:rgba(20,12,6,.42);display:flex;align-items:center;justify-content:center;font-size:12px;letter-spacing:.1em;color:var(--gold);text-transform:uppercase}
+#touch .tb.on{background:rgba(168,132,58,.55);color:#1a1208}
+#bLight{right:calc(34px + env(safe-area-inset-right));bottom:calc(120px + env(safe-area-inset-bottom));width:104px!important;height:104px!important}
+#bHeavy{right:calc(150px + env(safe-area-inset-right));bottom:calc(170px + env(safe-area-inset-bottom))}
+#bBlock{right:calc(160px + env(safe-area-inset-right));bottom:calc(60px + env(safe-area-inset-bottom))}
+#bDodge{right:calc(40px + env(safe-area-inset-right));bottom:calc(250px + env(safe-area-inset-bottom))}
+#bCam{right:calc(40px + env(safe-area-inset-right));bottom:calc(120px + env(safe-area-inset-bottom))}
+#stick{display:none;position:fixed;width:120px;height:120px;border-radius:50%;border:1px solid rgba(226,194,117,.6);z-index:4;pointer-events:none}
+#knob{position:absolute;left:38px;top:38px;width:44px;height:44px;border-radius:50%;background:rgba(226,194,117,.45)}
+label{font-size:12px;letter-spacing:.1em;opacity:.8;text-transform:uppercase}
+@media (max-width:560px){.side{width:42vw}.nm{font-size:12px}#hint{display:none}}
+</style>
+</head>
+<body>
+<div id="view"></div>
+<div id="loading"><h1>KILIÇ</h1><div class="rule"></div><div id="status">Loading the arena...</div></div>
+<div id="menu">
+  <h1>KILIÇ</h1><div class="sub">Duels in the Ottoman arena</div><div class="rule"></div>
+  <div class="rowb"><label for="name">Your name</label><input id="name" maxlength="16" placeholder="Janissary"></div>
+  <div class="card"><h2>Fight the arena champion</h2>
+    <div class="rowb"><button data-lv="0">Recruit</button><button data-lv="1">Champion</button><button data-lv="2">Agha</button></div>
+    <button id="bBot">Enter the arena</button></div>
+  <div class="card" id="online"><h2>Duel a friend</h2>
+    <div class="note" id="onlineNote">Connecting...</div>
+    <button id="bHost">Host a duel</button>
+    <div class="rowb"><input id="codeIn" maxlength="4" placeholder="Code" autocapitalize="off"><button id="bJoin">Fight</button><button id="bWatch">Watch</button></div>
+    <div id="openList"></div></div>
+  <div class="rowb"><button id="bResume">Resume</button><button id="bLeave">Leave match</button><label for="vol">Volume</label><input id="vol" type="range" min="0" max="1.2" step="0.05" value="0.8" style="width:110px"></div>
+  <div class="note">Keyboard: WASD move, click light attack, E heavy, hold right-click block (tap it just before a hit to parry), Space dodge. Controller: stick, X, Y, LB, A. Touch: left thumb moves, buttons on the right.</div>
+</div>
+<div id="hud">
+  <div class="side" id="left"><div class="nm"><span id="aName">You</span><span class="wins" id="aWins"></span></div><div class="bar" id="aHp"><div></div></div><div class="bar st" id="aSt"><div></div></div></div>
+  <div class="side" id="right"><div class="nm"><span class="wins" id="bWins"></span><span id="bName">Opponent</span></div><div class="bar" id="bHp"><div></div></div><div class="bar st" id="bSt"><div></div></div></div>
+  <div id="round"></div><div id="watch"></div>
+  <div id="banner"><div id="bannerA"></div><div class="rule"></div><div id="bannerB"></div></div><div id="pop"></div><div id="hint"></div>
+</div>
+<button id="bMenu">Menu</button>
+<div id="touch"><div class="tb" id="bLight">Slash</div><div class="tb" id="bHeavy">Heavy</div><div class="tb" id="bBlock">Block</div><div class="tb" id="bDodge">Dodge</div><div class="tb" id="bCam">Cam</div></div>
+<div id="stick"><div id="knob"></div></div>
+<span id="code" hidden></span>
+<script type="module" src="./main.ts"></script>
+</body>
+</html>
