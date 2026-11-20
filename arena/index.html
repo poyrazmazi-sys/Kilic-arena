@@ -37,7 +37,7 @@ input{font:inherit;color:var(--ink);background:rgba(0,0,0,.4);border:1px solid v
 #watch{position:absolute;top:calc(40px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);font-size:12px;letter-spacing:.1em;opacity:.85;text-shadow:0 1px 4px #000;white-space:nowrap}
 #banner{position:absolute;top:30%;left:0;right:0;text-align:center;opacity:0;transition:opacity .6s;text-shadow:0 3px 18px #000}
 #bannerA{font-size:clamp(30px,6vw,64px);letter-spacing:.3em;color:var(--gold);text-transform:uppercase}#bannerB{letter-spacing:.25em;font-size:15px;text-transform:uppercase}
-#pop{position:absolute;top:44%;left:50%;transform:translate(-50%,0);font-size:22px;letter-spacing:.2em;text-transform:uppercase;color:#fff;opacity:0;transition:opacity .25s,transform .25s;text-shadow:0 2px 10px #000}
+#pop{position:absolute;top:58%;left:50%;transform:translate(-50%,0);font-size:22px;letter-spacing:.2em;text-transform:uppercase;color:#fff;opacity:0;transition:opacity .25s,transform .25s;text-shadow:0 2px 10px #000}
 #hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);font-size:12px;opacity:.7;letter-spacing:.06em;text-shadow:0 1px 3px #000;white-space:nowrap}
 #bMenu{position:fixed;z-index:6;right:max(16px,env(safe-area-inset-right));bottom:calc(14px + env(safe-area-inset-bottom));pointer-events:auto;padding:8px 12px;font-size:11px}
 #touch{display:none;position:fixed;inset:0;z-index:4;pointer-events:none}
@@ -48,6 +48,8 @@ input{font:inherit;color:var(--ink);background:rgba(0,0,0,.4);border:1px solid v
 #bBlock{right:calc(160px + env(safe-area-inset-right));bottom:calc(60px + env(safe-area-inset-bottom))}
 #bDodge{right:calc(40px + env(safe-area-inset-right));bottom:calc(250px + env(safe-area-inset-bottom))}
 #bView{right:calc(40px + env(safe-area-inset-right));top:calc(80px + env(safe-area-inset-top));width:62px!important;height:62px!important}
+#bLeap{right:calc(250px + env(safe-area-inset-right));bottom:calc(260px + env(safe-area-inset-bottom));border-color:#e2c275!important;color:#fff!important}
+#leapReady{font-size:12px;letter-spacing:.12em;color:var(--gold);text-transform:uppercase;text-shadow:0 1px 4px #000}
 #bCam{right:calc(40px + env(safe-area-inset-right));bottom:calc(120px + env(safe-area-inset-bottom))}
 #stick{display:none;position:fixed;width:120px;height:120px;border-radius:50%;border:1px solid rgba(226,194,117,.6);z-index:4;pointer-events:none}
 #knob{position:absolute;left:38px;top:38px;width:44px;height:44px;border-radius:50%;background:rgba(226,194,117,.45)}
@@ -70,16 +72,16 @@ label{font-size:12px;letter-spacing:.1em;opacity:.8;text-transform:uppercase}
     <div class="rowb"><input id="codeIn" maxlength="4" placeholder="Code" autocapitalize="off"><button id="bJoin">Fight</button><button id="bWatch">Watch</button></div>
     <div id="openList"></div></div>
   <div class="rowb"><button id="bResume">Resume</button><button id="bLeave">Leave match</button><label for="vol">Volume</label><input id="vol" type="range" min="0" max="1.2" step="0.05" value="0.8" style="width:110px"></div>
-  <div class="note">Keyboard: WASD move, click light attack, E heavy, hold right-click block (tap it just before a hit to parry), Space dodge, V to switch first and third person. Controller: stick, X, Y, LB, A. Touch: left thumb moves, buttons on the right.</div>
+  <div class="note">Keyboard: WASD move, click light attack, E heavy, hold right-click block (tap it just before a hit to parry), Space dodge, F for the leaping strike (once a match), V to switch first and third person. Controller: stick, X, Y, LB, A. Touch: left thumb moves, buttons on the right.</div>
 </div>
 <div id="hud">
-  <div class="side" id="left"><div class="nm"><span id="aName">You</span><span class="wins" id="aWins"></span></div><div class="bar" id="aHp"><div></div></div><div class="bar st" id="aSt"><div></div></div></div>
+  <div class="side" id="left"><div class="nm"><span id="aName">You</span><span class="wins" id="aWins"></span></div><div class="bar" id="aHp"><div></div></div><div class="bar st" id="aSt"><div></div></div><div id="leapReady"></div></div>
   <div class="side" id="right"><div class="nm"><span class="wins" id="bWins"></span><span id="bName">Opponent</span></div><div class="bar" id="bHp"><div></div></div><div class="bar st" id="bSt"><div></div></div></div>
   <div id="round"></div><div id="watch"></div>
   <div id="banner"><div id="bannerA"></div><div class="rule"></div><div id="bannerB"></div></div><div id="pop"></div><div id="hint"></div>
 </div>
 <button id="bMenu">Menu</button>
-<div id="touch"><div class="tb" id="bLight">Slash</div><div class="tb" id="bHeavy">Heavy</div><div class="tb" id="bBlock">Block</div><div class="tb" id="bDodge">Dodge</div><div class="tb" id="bCam">Cam</div><div class="tb" id="bView">View</div></div>
+<div id="touch"><div class="tb" id="bLight">Slash</div><div class="tb" id="bHeavy">Heavy</div><div class="tb" id="bBlock">Block</div><div class="tb" id="bDodge">Dodge</div><div class="tb" id="bCam">Cam</div><div class="tb" id="bView">View</div><div class="tb" id="bLeap">Leap</div></div>
 <div id="stick"><div id="knob"></div></div>
 <span id="code" hidden></span>
 <script type="module" src="./main.ts"></script>

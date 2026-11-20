@@ -27,6 +27,15 @@ for f in sorted(glob.glob(os.path.join(SRC, '*.fbx'))):
     st = tr.strips.new(name, int(act.frame_range[0]), act); st.name = name
     print('clip', name, [round(x) for x in act.frame_range], 'slot', getattr(st, 'action_slot', None))
 arm.animation_data.action = None
+# hand-built moves from mocap poses
+import sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import moves
+for act in moves.build(arm):
+    tr = arm.animation_data.nla_tracks.new(); tr.name = act.name
+    st = tr.strips.new(act.name, int(act.frame_range[0]), act); st.name = act.name
+arm.animation_data.action = None
+if '--preview' in sys.argv:
+    bpy.ops.wm.save_as_mainfile(filepath=os.path.join(ROOT, 'blender', 'moves_preview.blend'))
 shrink(1024)
 bpy.ops.object.select_all(action='SELECT')
 out = os.path.join(OUT, 'knight.glb')

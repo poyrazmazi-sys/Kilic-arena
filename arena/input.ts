@@ -1,5 +1,5 @@
 /** One set of controls for keyboard and mouse, gamepads and touch. Edge-triggered buttons are consumed once per frame. */
-export interface Cmd { mx: number; my: number; light: boolean; heavy: boolean; block: boolean; dodge: boolean; lookX: number; lookY: number; cam: boolean; view: boolean; device: 'kb' | 'pad' | 'touch' }
+export interface Cmd { mx: number; my: number; light: boolean; heavy: boolean; block: boolean; dodge: boolean; lookX: number; lookY: number; cam: boolean; view: boolean; leap: boolean; device: 'kb' | 'pad' | 'touch' }
 
 export class Input {
   private keys = new Set<string>(); private mouse = { l: false, r: false }; private edges = new Set<string>();
@@ -55,7 +55,7 @@ export class Input {
     if (heavy) light = false;
     let block = this.mouse.r || k.has('KeyL') || k.has('KeyQ') || this.touchHeld.has('block');
     let dodge = e.has('Space') || e.has('Tdodge');
-    let cam = e.has('KeyC') || e.has('Tcam'); let view = e.has('KeyV') || e.has('Tview');
+    let cam = e.has('KeyC') || e.has('Tcam'); let view = e.has('KeyV') || e.has('Tview'); let leap = e.has('KeyF') || e.has('Tleap');
     let lookX = this.look.x, lookY = this.look.y;
     mx += this.touchMove.x; my += this.touchMove.y;
     // gamepad (standard mapping): stick moves, X/Square light, Y/Triangle heavy, LB/LT/RB block, A/Cross dodge, B/Circle dodge, View/Select camera
@@ -67,11 +67,11 @@ export class Input {
       const ax = dz(p.axes[0] ?? 0), ay = dz(p.axes[1] ?? 0), rx = dz(p.axes[2] ?? 0), ry = dz(p.axes[3] ?? 0);
       if (ax || ay || p.buttons.some((x) => x.pressed)) { this.device = 'pad'; this.padName = p.id; }
       mx += ax; my -= ay; lookX += rx * 14; lookY += ry * 10;
-      light ||= edge(2) || edge(7); heavy ||= edge(3); block ||= b(4) || b(5) || b(6); dodge ||= edge(0) || edge(1); cam ||= edge(8); view ||= edge(10) || edge(11);
+      light ||= edge(2) || edge(7); heavy ||= edge(3); block ||= b(4) || b(6); leap ||= edge(5); dodge ||= edge(0) || edge(1); cam ||= edge(8); view ||= edge(10) || edge(11);
       this.padPrev = p.buttons.map((x) => x.pressed);
     }
     this.edges.clear(); this.look.x = this.look.y = 0;
     const l = Math.hypot(mx, my); if (l > 1) { mx /= l; my /= l; }
-    return { mx, my, light, heavy, block, dodge, lookX, lookY, cam, view, device: this.device };
+    return { mx, my, light, heavy, block, dodge, lookX, lookY, cam, view, leap, device: this.device };
   }
 }

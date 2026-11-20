@@ -10,14 +10,14 @@ const clips: Record<string, THREE.AnimationClip> = {};
 // Timings (seconds). Active windows are when the blade can connect.
 export const T = {
   light: 0.56, lightWin: [0.2, 0.44] as const, heavy: 1.0, heavyWin: [0.42, 0.84] as const,
-  dodge: 0.42, iframes: 0.3, parry: 0.22, hitLight: 0.42, hitHeavy: 0.75, stun: 1.05, recoil: 0.38, guardBreak: 0.85,
+  dodge: 0.5, iframes: 0.32, leap: 1.5, leapWin: [0.76, 1.05] as const, leapAir: [0.3, 0.98] as const, parry: 0.22, hitLight: 0.42, hitHeavy: 0.75, stun: 1.05, recoil: 0.38, guardBreak: 0.85,
 };
 export const COST = { light: 9, heavy: 22, dodge: 18, blockHit: 14 };
 export const DMG = { light: 13, heavy: 30 };
 export const ZONE = { head: 1.7, torso: 1, arm: 0.65, leg: 0.75 } as const;
 export type Zone = keyof typeof ZONE;
-export type Act = 'idle' | 'light' | 'heavy' | 'block' | 'dodge' | 'hit' | 'stun' | 'recoil' | 'dead';
-export const ACTS: Act[] = ['idle', 'light', 'heavy', 'block', 'dodge', 'hit', 'stun', 'recoil', 'dead'];
+export type Act = 'idle' | 'light' | 'heavy' | 'block' | 'dodge' | 'hit' | 'stun' | 'recoil' | 'dead' | 'leap';
+export const ACTS: Act[] = ['idle', 'light', 'heavy', 'block', 'dodge', 'hit', 'stun', 'recoil', 'dead', 'leap'];
 
 /** Hitboxes: bone, child bone (capsule end), radius, zone. */
 const HB: [string, string, number, Zone][] = [
@@ -170,8 +170,9 @@ export class Fighter {
     const a = this.act;
     if (a === 'light') { const c = clips['light' + this.combo]; this.play('light' + this.combo, 0.16, true, c.duration / T.light, true, at * c.duration / T.light); }
     else if (a === 'heavy') { const c = clips.heavy; this.play('heavy', 0.2, true, c.duration / T.heavy, true, at * c.duration / T.heavy); }
-    else if (a === 'block') this.play('guard', 0.18, false, 0.05);
-    else if (a === 'dodge') this.play('crouch_idle', 0.14, false, 1.2);
+    else if (a === 'block') this.play('block', 0.16, false, 1);
+    else if (a === 'dodge') { const n = Math.abs(this.dodgeDir.x) > 0.35 ? 'dodge_side' : 'dodge_back'; const c = clips[n]; this.play(n, 0.08, true, c.duration / T.dodge, true, at * c.duration / T.dodge); }
+    else if (a === 'leap') { const c = clips.leap; this.play('leap', 0.12, true, c.duration / T.leap, true, at * c.duration / T.leap); }
     else if (a === 'hit' || a === 'recoil') this.play('hit_reaction', 0.12, true, 2.4, true, 0.15);
     else if (a === 'stun') this.play('hit_reaction', 0.08, true, 1.1, true, 0.1);
     else if (a === 'dead') this.play(Math.random() < 0.5 ? 'dying_1' : 'dying_2', 0.2, true, 1.25, true);
@@ -184,7 +185,7 @@ export class Fighter {
   }
 
   /** Local simulation for the player's own fighter or a bot. Returns nothing; hits are found after animation. */
-  step(dt: number, cmd: { mx: number; my: number; light: boolean; heavy: boolean; block: boolean; dodge: boolean }, opp: Fighter | null) {
+  step(dt: number, cmd: { mx: number; my: number; light: boolean; heavy: boolean; block: boolean; dodge: boolean; leap?: boolean }, opp: Fighter | null) {
     this.actT += dt; const a = this.act;
     const busy = a === 'light' || a === 'heavy' || a === 'dodge';
     if (!busy && a !== 'block' && a !== 'dead') this.st = Math.min(100, this.st + 24 * dt);
@@ -196,6 +197,10 @@ export class Fighter {
     else if (cmd.dodge && canDodge && this.st >= COST.dodge) {
       this.st -= COST.dodge; this.dodgeDir.copy(this.move.lengthSq() > 0.04 ? this.move.clone().normalize() : new THREE.Vector2(0, -1)); this.start('dodge', T.dodge);
     } else if (free && cmd.light && this.st >= COST.light) { this.st -= COST.light; this.start('light', T.light, 0); }
+    else if (free && cmd.leap && !this.leapUsed && this.st >= 30) {
+      // the once-a-match leap: aim for the opponent's chest, no further than a strong jump carries you
+      this.leapUsed = true; this.st -= 30; this.leapDist = opp ? THREE.MathUtils.clamp(opp.root.position.distanceTo(this.root.position) - 0.75, 0, 4.6) : 2.5; this.start('leap', T.leap);
+    }
     else if (free && cmd.heavy && this.st >= COST.heavy) { this.st -= COST.heavy; this.start('heavy', T.heavy); }
     else if (a === 'idle' && cmd.block) { this.start('block'); }
     else if (a === 'block' && !cmd.block) { this.act = 'idle'; this.actSeq++; }
@@ -205,7 +210,7 @@ export class Fighter {
         if (this.queued && this.combo < 2 && this.st >= COST.light) { this.st -= COST.light; this.start('light', T.light, this.combo + 1); }
         else { this.act = 'idle'; this.actSeq++; }
       }
-    } else if ((a === 'heavy' && this.actT >= T.heavy) || ((a === 'hit' || a === 'stun' || a === 'recoil') && this.actT >= this.actDur) || (a === 'dodge' && this.actT >= T.dodge)) { this.act = 'idle'; this.actSeq++; }
+    } else if ((a === 'heavy' && this.actT >= T.heavy) || ((a === 'hit' || a === 'stun' || a === 'recoil') && this.actT >= this.actDur) || (a === 'dodge' && this.actT >= T.dodge) || (a === 'leap' && this.actT >= T.leap)) { this.act = 'idle'; this.actSeq++; }
 
     // movement in fighter space (x right, y forward)
     const now = this.act; let lx = 0, ly = 0;
@@ -213,20 +218,26 @@ export class Fighter {
     else if (now === 'block') { sp = 1.3; lx = this.move.x; ly = this.move.y; }
     else if (now === 'light') { sp = 1.6 * Math.max(0, Math.sin(Math.min(1, this.actT / 0.34) * Math.PI)); ly = 1; }
     else if (now === 'heavy') { sp = 2.0 * Math.max(0, Math.sin(THREE.MathUtils.clamp((this.actT - 0.2) / 0.45, 0, 1) * Math.PI)); ly = 1; }
+    else if (now === 'leap') {
+      // in the air, steer to land just in front of the opponent, wherever they have moved
+      const [t0, t1] = T.leapAir;
+      if (this.actT > t0 && this.actT < t1) { const left = opp ? Math.max(0, opp.root.position.distanceTo(this.root.position) - 0.8) : this.leapDist * (1 - (this.actT - t0) / (t1 - t0)); sp = Math.min(9, left / Math.max(0.06, t1 - this.actT)); } else sp = 0;
+      ly = 1;
+    }
     else if (now === 'dodge') { sp = 4.8 * Math.sin(Math.min(1, this.actT / T.dodge) * Math.PI); lx = this.dodgeDir.x; ly = this.dodgeDir.y; }
     else if (now === 'recoil' || now === 'stun' || now === 'hit') { sp = 1.2 * Math.max(0, 1 - this.actT / 0.3); ly = -1; }
     this.speed = sp * Math.hypot(lx, ly);
     // facing: lock on to the opponent
     if (opp) {
       const d = opp.root.position.clone().sub(this.root.position); const want = Math.atan2(-d.x, -d.z);
-      const rate = now === 'idle' || now === 'block' ? 12 : now === 'light' ? 5 : now === 'heavy' ? (this.actT < 0.4 ? 4 : 1) : 0;
+      const rate = now === 'idle' || now === 'block' ? 12 : now === 'leap' ? (this.actT < T.leapWin[1] ? 6 : 0) : now === 'light' ? 5 : now === 'heavy' ? (this.actT < 0.4 ? 4 : 1) : 0;
       let dy = want - this.root.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
       this.root.rotation.y += THREE.MathUtils.clamp(dy, -rate * dt, rate * dt);
     }
     const y = this.root.rotation.y, fx = -Math.sin(y), fz = -Math.cos(y), rx = Math.cos(y), rz = -Math.sin(y);
     // momentum: footwork accelerates and brakes; dashes and lunges snap faster
     const wx = (fx * ly + rx * lx) * sp, wz = (fz * ly + rz * lx) * sp;
-    const accel = now === 'dodge' ? 60 : now === 'light' || now === 'heavy' ? 30 : now === 'idle' || now === 'block' ? 14 : 20;
+    const accel = now === 'dodge' || now === 'leap' ? 60 : now === 'light' || now === 'heavy' ? 30 : now === 'idle' || now === 'block' ? 14 : 20;
     const dvx = wx - this.vel.x, dvz = wz - this.vel.z, dl = Math.hypot(dvx, dvz), mx = accel * dt;
     if (dl > mx) { this.vel.x += (dvx / dl) * mx; this.vel.z += (dvz / dl) * mx; } else { this.vel.x = wx; this.vel.z = wz; }
     this.knock.multiplyScalar(Math.exp(-5.5 * dt));
@@ -251,7 +262,7 @@ export class Fighter {
     const a = this.act;
     if (a === 'idle' || a === 'block') {
       const m = this.move, mag = m.length();
-      if (a === 'block') { this.play('guard', 0.12, false, 0.05); }
+      if (a === 'block') { this.play('block', 0.16, false, 1); }
       else if (mag > 0.15) { const back = m.y < -0.2; this.play('walking', 0.2, false, (back ? -1 : 1) * Math.max(0.7, mag * 1.35)); }
       else this.play('idle', 0.25);
       // face the walk direction a little when stepping sideways
@@ -260,9 +271,6 @@ export class Fighter {
     } else this.animYaw += (0 - this.animYaw) * Math.min(1, dt * 12);
     this.model.rotation.y = Math.PI + this.animYaw;
     // dodge: low, leaning into the direction of travel
-    const dodging = a === 'dodge' ? Math.sin(Math.min(1, this.actT / T.dodge) * Math.PI) : 0;
-    this.model.rotation.z = -this.dodgeDir.x * dodging * 0.45; this.model.rotation.x = -this.dodgeDir.y * dodging * 0.25;
-    this.model.position.y = -dodging * 0.12;
     this.mixer.update(dt);
     this.root.updateMatrixWorld(true);
     this.blade.updateMatrixWorld(true);
@@ -274,6 +282,7 @@ export class Fighter {
   get striking() {
     if (this.act === 'light') return this.actT >= T.lightWin[0] && this.actT <= T.lightWin[1];
     if (this.act === 'heavy') return this.actT >= T.heavyWin[0] && this.actT <= T.heavyWin[1];
+    if (this.act === 'leap') return this.actT >= T.leapWin[0] && this.actT <= T.leapWin[1];
     return false;
   }
 
@@ -306,7 +315,7 @@ export class Fighter {
   woundWorld(w: Wound) { const p = new THREE.Vector3(...w.p); return this.bones[w.b][0].localToWorld(p); }
   boneLocal(bi: number, world: THREE.Vector3): [number, number, number] { const p = this.bones[bi][0].worldToLocal(world.clone()); return [+p.x.toFixed(1), +p.y.toFixed(1), +p.z.toFixed(1)]; }
   chest() { return this.root.position.clone().setY(1.3); }
-  hat: THREE.Object3D | null = null;
+  hat: THREE.Object3D | null = null; leapUsed = false; leapDist = 0;
   /** Where this fighter's eyes are, following the head as it moves. */
   eyes(out: THREE.Vector3) { const h = this.model.getObjectByName('mixamorigHead')!; h.getWorldPosition(out); out.y += 0.08; return out.addScaledVector(this.forward, 0.16); }
   /** Push the body (world m/s), e.g. when struck. */

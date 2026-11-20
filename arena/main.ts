@@ -57,7 +57,7 @@ async function main() {
 
   // ---------- input and touch controls
   const input = new Input(renderer.domElement);
-  if (mobile) { $('touch').style.display = 'block'; input.bindTouch($('stick'), $('knob'), { light: $('bLight'), heavy: $('bHeavy'), block: $('bBlock'), dodge: $('bDodge'), cam: $('bCam'), view: $('bView') }); }
+  if (mobile) { $('touch').style.display = 'block'; input.bindTouch($('stick'), $('knob'), { light: $('bLight'), heavy: $('bHeavy'), block: $('bBlock'), dodge: $('bDodge'), cam: $('bCam'), view: $('bView'), leap: $('bLeap') }); }
 
   // ---------- game state
   let mode: Mode = 'menu', me: Fighter | null = null, opp: Fighter | null = null, bot: Bot | null = null, bot2: Bot | null = null;
@@ -71,33 +71,36 @@ async function main() {
   const pop = (s: string) => { $('pop').textContent = s; $('pop').style.opacity = '1'; $('pop').style.transform = 'translate(-50%,0) scale(1.08)'; popT = 0.9; };
 
   // ---------- combat resolution: the defender decides what happened to them
-  function resolve(def: Fighter, att: Fighter, k: 'l' | 'h', zone: Zone, bi: number, p: [number, number, number], ang: number): Code {
+  function resolve(def: Fighter, att: Fighter, k: 'l' | 'h' | 'x', zone: Zone, bi: number, p: [number, number, number], ang: number): Code {
     if (!def.alive) return 'e';
     if (def.act === 'dodge' && def.actT < T.iframes) return 'e';
     const away = def.root.position.clone().sub(att.root.position);
     const toAtt = att.root.position.clone().sub(def.root.position).setY(0).normalize();
     const facing = def.forward.dot(toAtt) > -0.05;
-    if (def.act === 'block' && facing) {
+    if (def.act === 'block' && facing && k !== 'x') {
       if (def.actT < T.parry) { def.shove(away, 0.6); return 'p'; }
       if (k === 'h') { def.start('hit', T.guardBreak); def.shove(away, 3.6); return 'g'; }
       def.st -= COST.blockHit; if (def.st <= 0) { def.st = 0; def.start('hit', T.guardBreak); def.shove(away, 3); return 'g'; }
       def.shove(away, 1.4); return 'b';
     }
-    const dmg = Math.round((k === 'h' ? DMG.heavy : DMG.light) * ZONE[zone] * (def.act === 'stun' ? 1.25 : 1));
+    const dmg = k === 'x' ? (zone === 'torso' || zone === 'head' ? 999 : 45) : Math.round((k === 'h' ? DMG.heavy : DMG.light) * ZONE[zone] * (def.act === 'stun' ? 1.25 : 1));
     def.hp = Math.max(0, def.hp - dmg);
-    def.addWound({ b: bi, p, a: ang, s: (k === 'h' ? 0.26 : 0.15) * (zone === 'head' ? 0.7 : 1) });
-    if (def.hp <= 0) { def.start('dead'); def.shove(away, k === 'h' ? 4.5 : 3); } else { def.start('hit', k === 'h' ? T.hitHeavy : T.hitLight); def.shove(away, k === 'h' ? 3.8 : 1.9); }
+    def.addWound({ b: bi, p, a: ang, s: (k === 'x' ? 0.34 : k === 'h' ? 0.26 : 0.15) * (zone === 'head' ? 0.7 : 1) });
+    const airborne = def.act === 'leap' && def.actT > T.leapAir[0] && def.actT < T.leapAir[1];
+    if (def.hp <= 0) { def.start('dead'); def.shove(away, k === 'x' ? 6 : k === 'h' ? 4.5 : 3); } else if (!airborne) { def.start('hit', k === 'h' ? T.hitHeavy : T.hitLight); def.shove(away, k === 'h' ? 3.8 : 1.9); }
     return 'h';
   }
   /** Effects and the attacker's reaction, shown the same way on every screen. */
   function outcome(def: Fighter, att: Fighter, code: Code, heavy: boolean, attackerIsLocal: boolean) {
-    hitStop = code === 'h' ? (heavy ? 0.11 : 0.06) : code === 'p' ? 0.12 : code === 'b' || code === 'g' ? 0.05 : 0;
+    const finisher = att.act === 'leap';
+    if (finisher && code === 'h') { pop('Finisher!'); excite = 1; sfx2.cheer(); sfx2.gong(); shake = 1; }
+    hitStop = finisher && code === 'h' ? 0.35 : code === 'h' ? (heavy ? 0.11 : 0.06) : code === 'p' ? 0.12 : code === 'b' || code === 'g' ? 0.05 : 0;
     const back = att.root.position.clone().sub(def.root.position);
     if (attackerIsLocal) { if (code === 'p') att.shove(back, 3.2); else if (code === 'b') att.shove(back, 1.6); else if (code === 'h') att.vel.multiplyScalar(0.2); }
     const mid = def.chest().lerp(att.chest(), 0.4);
     if (code === 'h') {
       const w = def.wounds[def.wounds.length - 1]; const p = w ? def.woundWorld(w) : def.chest();
-      fx.blood(p, def.root.position.clone().sub(att.root.position).setY(0.3).normalize(), heavy ? 70 : 34); sfx2.flesh(heavy);
+      fx.blood(p, def.root.position.clone().sub(att.root.position).setY(0.3).normalize(), finisher ? 140 : heavy ? 70 : 34); sfx2.flesh(heavy);
       excite = Math.min(1, excite + (heavy ? 0.6 : 0.35)); if (heavy) sfx2.cheer();
       if (!def.alive) { excite = 1; sfx2.cheer(); sfx2.gong(); }
       if (def === me) shake = heavy ? 0.6 : 0.3;
@@ -123,7 +126,7 @@ async function main() {
     f.remote = true; f.target.set(p.x, 0, p.z); f.targetYaw = p.y; f.hp = p.hp; f.st = p.st; f.wins = p.wn ?? 0; f.name = String(p.nm ?? '').slice(0, 16);
     const sn = seen.get(key) ?? { claim: 0, res: 0, synced: false };
     if (!sn.synced) { f.root.position.copy(f.target); f.root.rotation.y = p.y; }
-    if (p.s !== f.actSeq) { f.act = ACTS[p.a] ?? 'idle'; f.actSeq = p.s; f.combo = p.c ?? 0; f.actT = p.at ?? 0; if (Array.isArray(p.dd)) f.dodgeDir.set(p.dd[0], p.dd[1]); f.animStart(f.actT); if (f.act === 'light' || f.act === 'heavy') sfx2.whoosh(f.act === 'heavy'); }
+    if (p.s !== f.actSeq) { f.act = ACTS[p.a] ?? 'idle'; f.actSeq = p.s; f.combo = p.c ?? 0; f.actT = p.at ?? 0; if (Array.isArray(p.dd)) f.dodgeDir.set(p.dd[0], p.dd[1]); f.animStart(f.actT); if (f.act === 'light' || f.act === 'heavy' || f.act === 'leap') sfx2.whoosh(f.act !== 'light'); }
     const w = Array.isArray(p.w) ? p.w : [];
     if (w.length < f.wounds.length) f.clearWounds();
     for (let i = f.wounds.length; i < w.length; i++) { const v = w[i]; if (Array.isArray(v) && v.length === 6) f.addWound({ b: v[0] | 0, p: [v[1], v[2], v[3]], a: v[4], s: Math.min(0.4, v[5]) }); }
@@ -134,7 +137,7 @@ async function main() {
     const hs: any[] = Array.isArray(p.h) ? p.h : [];
     for (const h of hs) if (Array.isArray(h) && h[0] > sn.claim) {
       sn.claim = h[0];
-      if (sn.synced && otherIsMe && other && h[3] >= 0 && h[3] < 12) { const c = resolve(other, f, h[1] === 'h' ? 'h' : 'l', (h[2] in ZONE ? h[2] : 'torso') as Zone, h[3] | 0, [h[4], h[5], h[6]], h[7]); results.push([h[0], c]); outcome(other, f, c, h[1] === 'h', false); }
+      if (sn.synced && otherIsMe && other && h[3] >= 0 && h[3] < 12) { const c = resolve(other, f, h[1] === 'x' ? 'x' : h[1] === 'h' ? 'h' : 'l', (h[2] in ZONE ? h[2] : 'torso') as Zone, h[3] | 0, [h[4], h[5], h[6]], h[7]); results.push([h[0], c]); outcome(other, f, c, h[1] !== 'l', false); }
     }
     sn.synced = true; seen.set(key, sn);
   }
@@ -163,7 +166,7 @@ async function main() {
   function showMenu() { $('menu').style.display = 'flex'; $('hud').style.opacity = '0'; }
   function startBot() {
     leaveOnline(); initAudio(); mode = 'bot'; mySide = 0; me = fighters[0]; opp = fighters[1]; bot = new Bot(botLevel);
-    fighters.forEach((f) => { f.remote = false; f.wins = 0; f.root.visible = true; }); opp.name = ['Recruit', 'Champion', 'Agha of the Arena'][botLevel];
+    fighters.forEach((f) => { f.remote = false; f.wins = 0; f.leapUsed = false; f.root.visible = true; }); opp.name = ['Recruit', 'Champion', 'Agha of the Arena'][botLevel];
     round = 1; newRound(); hideMenu();
   }
   function newRound() {
@@ -227,6 +230,12 @@ async function main() {
   const clock = new THREE.Clock(); let fpsT = 0, frames = 0, scale = 1, slow = 0;
   (window as any).__sim = (secs: number) => { const log: string[] = []; for (let i = 0; i < secs * 30; i++) { const h = fighters.map((f) => f.hp + f.act); frame(1 / 30, true); fighters.forEach((f, k) => { if (f.hp + f.act !== h[k]) log.push(`${(i / 30).toFixed(1)} F${k} ${f.act} hp${f.hp}`); }); } return { log: log.slice(-30), mode, hp: [fighters[0].hp, fighters[1].hp], act: fighters.map((f) => f.act), wins: fighters.map((f) => f.wins), round, wounds: fighters.map((f) => f.wounds.length) }; };
   (window as any).__start = (m: string, lv = 1) => { if (m === 'bot') { botLevel = lv; startBot(); } };
+  const pressQ = new Set<string>();
+  (window as any).__press = (k: string) => pressQ.add(k);
+  (window as any).__place = (z0: number, z1: number) => { fighters[0].root.position.set(0, 0, z0); fighters[1].root.position.set(0, 0, z1); fighters.forEach((f) => { f.vel.set(0, 0, 0); f.knock.set(0, 0, 0); }); };
+  (window as any).__hip = () => fighters[0].model.getObjectByName('mixamorigHips')!.getWorldPosition(new THREE.Vector3()).y;
+  (window as any).__actT = () => fighters[0].actT;
+  (window as any).__blade = () => { const f = fighters[0], o = fighters[1]; const c = o.chest(); const tip = f.tipW, hilt = f.hiltW; return `tip(${tip.x.toFixed(2)},${tip.y.toFixed(2)},${tip.z.toFixed(2)}) hilt(${hilt.y.toFixed(2)},${hilt.z.toFixed(2)}) oppZ=${o.root.position.z.toFixed(2)} oppAct=${o.act} striking=${f.striking} swingHit=${f.swingHit}`; };
   (window as any).__ready = false;
   (window as any).__jumps = (secs: number) => {
     const hip = (f: Fighter) => f.model.getObjectByName('mixamorigHips')!.getWorldPosition(new THREE.Vector3());
@@ -254,12 +263,12 @@ async function main() {
 
   function frame(dt: number, sim = false) {
     time += dt;
-    const cmd = input.read();
+    const cmd = input.read(); for (const k of pressQ) (cmd as any)[k] = true; pressQ.clear();
     // --- local fighter and bot
     if ((mode === 'bot' || mode === 'duel') && me) {
       const c = $('menu').style.display === 'none' ? cmd : { ...cmd, mx: 0, my: 0, light: false, heavy: false, block: false, dodge: false };
       const before = me.actSeq; me.step(dt, c, opp && opp.root.visible ? opp : null);
-      if (me.actSeq !== before && (me.act === 'light' || me.act === 'heavy')) sfx2.whoosh(me.act === 'heavy');
+      if (me.actSeq !== before && (me.act === 'light' || me.act === 'heavy' || me.act === 'leap')) { sfx2.whoosh(me.act !== 'light'); if (me.act === 'leap') excite = Math.min(1, excite + 0.4); }
     }
     if (mode === 'bot' && opp && me && bot) { const before = opp.actSeq; opp.step(dt, bot.cmd(opp, me, dt), me); if (opp.actSeq !== before && (opp.act === 'light' || opp.act === 'heavy')) sfx2.whoosh(opp.act === 'heavy'); }
     if (mode === 'watch' && !duel && bot && bot2) { const [x, y] = fighters; x.step(dt, bot.cmd(x, y, dt), y); y.step(dt, bot2.cmd(y, x, dt), x); } // demo for testing cameras
@@ -275,7 +284,7 @@ async function main() {
           const o = fs.find((p) => !p.sameTab) ?? null;
           if (o && o.peer !== oppPeer) { // a new opponent arrived
             oppPeer = o.peer; mySide = mineIdx === 0 ? 0 : 1; me = fighters[mySide]; opp = fighters[1 - mySide as 0 | 1];
-            fighters.forEach((f) => { f.root.visible = true; f.wins = 0; }); me.remote = false; seen.delete(oppPeer); round = 1; newRound();
+            fighters.forEach((f) => { f.root.visible = true; f.wins = 0; f.leapUsed = false; }); me.remote = false; seen.delete(oppPeer); round = 1; newRound();
             room?.presence({ open: null });
           }
           if (!o && oppPeer) { oppPeer = ''; opp = null; fighters[1 - mySide].root.visible = false; banner('Your opponent left', `Code ${code.toUpperCase()}`, 3); room?.presence({ open: code }); }
@@ -318,7 +327,7 @@ async function main() {
       if (att.remote || !att.root.visible || !def.root.visible || !att.striking || att.swingHit) continue;
       if ((mode === 'duel' && att !== me) || (mode === 'watch' && duel) || mode === 'menu') continue;
       const hit = def.hitTest(att.hiltW, att.tipW); if (!hit) continue;
-      att.swingHit = true; const k = att.act === 'heavy' ? 'h' : 'l', bl = def.boneLocal(hit.bi, hit.point), ang = (Math.random() - 0.5) * 1.2 + (att.combo % 2 ? 0.5 : -0.5);
+      att.swingHit = true; const k = att.act === 'leap' ? 'x' : att.act === 'heavy' ? 'h' : 'l', bl = def.boneLocal(hit.bi, hit.point), ang = (Math.random() - 0.5) * 1.2 + (att.combo % 2 ? 0.5 : -0.5);
       if (mode === 'bot' || (mode === 'watch' && !duel)) outcome(def, att, resolve(def, att, k, hit.zone, hit.bi, bl, ang), k === 'h', true);
       else claims.push([++claimSeq, k, hit.zone, hit.bi, ...bl, +ang.toFixed(2)]);
     }
@@ -330,7 +339,7 @@ async function main() {
         matchOver = mWins >= 2 || oWins >= 2 || (!won && opp.wins + 1 >= 2 && mode === 'duel');
         banner(won ? (matchOver ? 'Victory' : 'Round won') : (matchOver ? 'Defeat' : 'Round lost'), won ? 'The crowd roars' : 'Rise again', 3.2);
       }
-      if (overT >= 0) { overT += dt; if (overT > (matchOver ? 6 : 3.6)) { if (matchOver) { me.wins = 0; if (mode === 'bot') opp.wins = 0; round = 1; matchOver = false; } else round++; newRound(); } }
+      if (overT >= 0) { overT += dt; if (overT > (matchOver ? 6 : 3.6)) { if (matchOver) { me.wins = 0; me.leapUsed = false; opp.leapUsed = false; if (mode === 'bot') opp.wins = 0; round = 1; matchOver = false; } else round++; newRound(); } }
     }
     // --- camera
     const cam = camera;
@@ -388,16 +397,16 @@ async function main() {
     $('aWins').textContent = '◆'.repeat(L.wins) + '◇'.repeat(Math.max(0, 2 - L.wins)); $('bWins').textContent = R ? '◆'.repeat(R.wins) + '◇'.repeat(Math.max(0, 2 - R.wins)) : '';
     $('round').textContent = `Round ${round}`;
     $('watch').textContent = mode === 'watch' ? `Watching · ${camMode === 'drone' ? 'Drone, ' + SHOTS[shotI].toLowerCase() : camMode === 'stands' ? 'Seat in the stands' : 'Free camera'} · ${mobile ? 'CAM' : 'C or the controller View button'} to switch` : (duel ? `Code ${code.toUpperCase()} · ${watchers} watching` : '');
-    const dev = mode === 'watch' ? '' : input.device === 'pad' ? 'Stick move · X light · Y heavy · LB or LT block · A dodge · Click a stick to change view' : input.device === 'touch' ? '' : 'WASD move · Click light · E heavy · Hold right-click block · Space dodge · V view · Esc menu';
+    const dev = mode === 'watch' ? '' : input.device === 'pad' ? 'Stick move · X light · Y heavy · LB or LT block · A dodge · RB leap (once) · Click a stick to change view' : input.device === 'touch' ? '' : 'WASD move · Click light · E heavy · Hold right-click block · Space dodge · F leap (once) · V view · Esc';
     $('hint').textContent = dev;
     if (bannerT > 0) { bannerT -= dt; if (bannerT <= 0) $('banner').style.opacity = '0'; }
     if (popT > 0) { popT -= dt; $('pop').style.transform = 'translate(-50%,0) scale(1)'; if (popT <= 0) $('pop').style.opacity = '0'; }
-    $('bCam').style.display = mode === 'watch' ? 'flex' : 'none'; $('bView').style.display = mode === 'watch' ? 'none' : 'flex'; for (const id of ['bLight', 'bHeavy', 'bBlock', 'bDodge']) $(id).style.display = mode === 'watch' ? 'none' : 'flex';
+    $('bLeap').style.display = mode !== 'watch' && me && !me.leapUsed ? 'flex' : 'none'; $('leapReady').textContent = me && mode !== 'watch' ? (me.leapUsed ? '' : `Leaping strike ready · ${input.device === 'pad' ? 'RB' : input.device === 'touch' ? 'LEAP' : 'F'}`) : ''; $('bCam').style.display = mode === 'watch' ? 'flex' : 'none'; $('bView').style.display = mode === 'watch' ? 'none' : 'flex'; for (const id of ['bLight', 'bHeavy', 'bBlock', 'bDodge']) $(id).style.display = mode === 'watch' ? 'none' : 'flex';
   }
 
   addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight); });
   $('loading').style.display = 'none'; showMenu(); $('bResume').style.display = 'none';
-  if (shot && q.get('start') === 'bot') { startBot(); }
+  if (shot && q.get('start') === 'bot') { if (q.has('lv')) botLevel = Number(q.get('lv')); startBot(); }
   if (shot && q.has('watchdemo')) { startBot(); me = null; mode = 'watch'; bot = new Bot(2); bot2 = new Bot(1); hideMenu(); }
   function loop() {
     const raw = Math.min(clock.getDelta(), 0.05); const dt = hitStop > 0 ? raw * 0.06 : raw; hitStop = Math.max(0, hitStop - raw);
