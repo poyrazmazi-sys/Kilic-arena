@@ -41,13 +41,18 @@ export async function loadFighterAssets() {
   const wy = (n: string) => proto.getObjectByName('mixamorig' + n)?.getWorldPosition(new THREE.Vector3()).y ?? 0;
   const h = wy('HeadTop_End') - Math.min(wy('LeftToeBase'), wy('LeftFoot'));
   baseScale = h > 0.1 ? 1.78 / (h + 0.06) : 1;
+  // Every clip is anchored to the same hip spot (the idle pose's), so switching clips never jumps the body.
+  const hipTrack = (c: THREE.AnimationClip) => c.tracks.find((t) => /Hips\.position$/.test(t.name));
+  const idleHip = hipTrack(kg.animations.find((c) => c.name === 'idle')!)!.values;
+  const iv = [idleHip[0], idleHip[1], idleHip[2]], up = iv.map(Math.abs).indexOf(Math.max(...iv.map(Math.abs)));
   for (const c of kg.animations) {
-    // keep animations in place: hold the two horizontal hip components at their first value
-    if (!c.name.startsWith('dying')) for (const tr of c.tracks) if (/Hips\.position$/.test(tr.name)) {
-      const v = tr.values, n = v.length / 3, mean = [0, 0, 0];
-      for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) mean[k] += Math.abs(v[i * 3 + k]) / n;
-      const up = mean.indexOf(Math.max(...mean));
-      for (let i = 1; i < n; i++) for (let k = 0; k < 3; k++) if (k !== up) v[i * 3 + k] = v[k];
+    const tr = hipTrack(c);
+    if (tr) {
+      const v = tr.values, n = v.length / 3, first = [v[0], v[1], v[2]];
+      for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) {
+        if (k === up) continue;
+        v[i * 3 + k] = c.name.startsWith('dying') ? v[i * 3 + k] - first[k] + iv[k] : iv[k]; // falls keep their travel, from the same start
+      }
     }
     clips[c.name] = c;
   }
@@ -99,6 +104,8 @@ export class Fighter {
   root = new THREE.Group(); model: THREE.Object3D; mixer: THREE.AnimationMixer;
   private actions: Record<string, THREE.AnimationAction> = {}; private cur = ''; private bones: THREE.Object3D[][] = [];
   private blade = new THREE.Group(); private woundMeshes: THREE.Mesh[] = [];
+  /** walking velocity (eases toward what the player asks for) and knockback, both world m/s */
+  vel = new THREE.Vector3(); knock = new THREE.Vector3();
   hp = 100; st = 100; act: Act = 'idle'; actT = 0; actSeq = 0; combo = 0; queued = false; swingHit = false; actDur = 0;
   wounds: Wound[] = []; move = new THREE.Vector2(); speed = 0; dodgeDir = new THREE.Vector2(); name = ''; wins = 0;
   /** remote fighters are driven by network state, not by step() */
@@ -135,7 +142,7 @@ export class Fighter {
       const cap = new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 8), new THREE.MeshStandardMaterial({ color: 0x1f5a3a, roughness: 0.8 })); cap.position.y = 0.12;
       hat.add(t1, cap);
     }
-    hat.traverse((o) => { (o as THREE.Mesh).castShadow = true; }); head.add(hat);
+    hat.traverse((o) => { (o as THREE.Mesh).castShadow = true; }); head.add(hat); this.hat = hat;
     this.mixer = new THREE.AnimationMixer(this.model);
     for (const n in clips) this.actions[n] = this.mixer.clipAction(clips[n]);
     this.play('idle', 0);
@@ -161,17 +168,18 @@ export class Fighter {
   /** Picks the animation for the current action. `at` lets remote copies join mid-action. */
   animStart(at: number) {
     const a = this.act;
-    if (a === 'light') { const c = clips['light' + this.combo]; this.play('light' + this.combo, 0.08, true, c.duration / T.light, true, at * c.duration / T.light); }
-    else if (a === 'heavy') { const c = clips.heavy; this.play('heavy', 0.12, true, c.duration / T.heavy, true, at * c.duration / T.heavy); }
-    else if (a === 'block') this.play('guard', 0.1, false, 0.05);
-    else if (a === 'dodge') this.play('crouch_idle', 0.08, false, 1.2);
-    else if (a === 'hit' || a === 'recoil') this.play('hit_reaction', 0.06, true, 2.4, true, 0.15);
+    if (a === 'light') { const c = clips['light' + this.combo]; this.play('light' + this.combo, 0.16, true, c.duration / T.light, true, at * c.duration / T.light); }
+    else if (a === 'heavy') { const c = clips.heavy; this.play('heavy', 0.2, true, c.duration / T.heavy, true, at * c.duration / T.heavy); }
+    else if (a === 'block') this.play('guard', 0.18, false, 0.05);
+    else if (a === 'dodge') this.play('crouch_idle', 0.14, false, 1.2);
+    else if (a === 'hit' || a === 'recoil') this.play('hit_reaction', 0.12, true, 2.4, true, 0.15);
     else if (a === 'stun') this.play('hit_reaction', 0.08, true, 1.1, true, 0.1);
-    else if (a === 'dead') this.play(Math.random() < 0.5 ? 'dying_1' : 'dying_2', 0.1, true, 1.25, true);
+    else if (a === 'dead') this.play(Math.random() < 0.5 ? 'dying_1' : 'dying_2', 0.2, true, 1.25, true);
   }
 
   reset(x: number, z: number, yaw: number) {
     this.hp = 100; this.st = 100; this.root.position.set(x, 0, z); this.root.rotation.y = yaw; this.target.set(x, 0, z); this.targetYaw = yaw;
+    this.vel.set(0, 0, 0); this.knock.set(0, 0, 0);
     this.clearWounds(); this.act = 'idle'; this.actT = 0; this.actSeq++; this.cur = ''; this.play('idle', 0); this.model.rotation.z = 0; this.model.position.y = 0;
   }
 
@@ -203,9 +211,9 @@ export class Fighter {
     const now = this.act; let lx = 0, ly = 0;
     if (now === 'idle') { sp = 2.5; lx = this.move.x; ly = this.move.y; }
     else if (now === 'block') { sp = 1.3; lx = this.move.x; ly = this.move.y; }
-    else if (now === 'light' && this.actT > 0.06 && this.actT < 0.3) { sp = 1.7; ly = 1; }
-    else if (now === 'heavy' && this.actT > 0.28 && this.actT < 0.6) { sp = 2.2; ly = 1; }
-    else if (now === 'dodge') { sp = 8.5 * Math.max(0, 1 - this.actT / T.dodge); lx = this.dodgeDir.x; ly = this.dodgeDir.y; }
+    else if (now === 'light') { sp = 1.6 * Math.max(0, Math.sin(Math.min(1, this.actT / 0.34) * Math.PI)); ly = 1; }
+    else if (now === 'heavy') { sp = 2.0 * Math.max(0, Math.sin(THREE.MathUtils.clamp((this.actT - 0.2) / 0.45, 0, 1) * Math.PI)); ly = 1; }
+    else if (now === 'dodge') { sp = 4.8 * Math.sin(Math.min(1, this.actT / T.dodge) * Math.PI); lx = this.dodgeDir.x; ly = this.dodgeDir.y; }
     else if (now === 'recoil' || now === 'stun' || now === 'hit') { sp = 1.2 * Math.max(0, 1 - this.actT / 0.3); ly = -1; }
     this.speed = sp * Math.hypot(lx, ly);
     // facing: lock on to the opponent
@@ -216,7 +224,13 @@ export class Fighter {
       this.root.rotation.y += THREE.MathUtils.clamp(dy, -rate * dt, rate * dt);
     }
     const y = this.root.rotation.y, fx = -Math.sin(y), fz = -Math.cos(y), rx = Math.cos(y), rz = -Math.sin(y);
-    this.root.position.x += (fx * ly + rx * lx) * sp * dt; this.root.position.z += (fz * ly + rz * lx) * sp * dt;
+    // momentum: footwork accelerates and brakes; dashes and lunges snap faster
+    const wx = (fx * ly + rx * lx) * sp, wz = (fz * ly + rz * lx) * sp;
+    const accel = now === 'dodge' ? 60 : now === 'light' || now === 'heavy' ? 30 : now === 'idle' || now === 'block' ? 14 : 20;
+    const dvx = wx - this.vel.x, dvz = wz - this.vel.z, dl = Math.hypot(dvx, dvz), mx = accel * dt;
+    if (dl > mx) { this.vel.x += (dvx / dl) * mx; this.vel.z += (dvz / dl) * mx; } else { this.vel.x = wx; this.vel.z = wz; }
+    this.knock.multiplyScalar(Math.exp(-5.5 * dt));
+    this.root.position.x += (this.vel.x + this.knock.x) * dt; this.root.position.z += (this.vel.z + this.knock.z) * dt;
     if (now === 'idle' || now === 'block') this.move.set(lx, ly); else this.move.set(0, 0);
   }
 
@@ -292,4 +306,15 @@ export class Fighter {
   woundWorld(w: Wound) { const p = new THREE.Vector3(...w.p); return this.bones[w.b][0].localToWorld(p); }
   boneLocal(bi: number, world: THREE.Vector3): [number, number, number] { const p = this.bones[bi][0].worldToLocal(world.clone()); return [+p.x.toFixed(1), +p.y.toFixed(1), +p.z.toFixed(1)]; }
   chest() { return this.root.position.clone().setY(1.3); }
+  hat: THREE.Object3D | null = null;
+  /** Where this fighter's eyes are, following the head as it moves. */
+  eyes(out: THREE.Vector3) { const h = this.model.getObjectByName('mixamorigHead')!; h.getWorldPosition(out); out.y += 0.08; return out.addScaledVector(this.forward, 0.16); }
+  /** Push the body (world m/s), e.g. when struck. */
+  shove(dir: THREE.Vector3, speed: number) { const d = dir.clone().setY(0); if (d.lengthSq() < 1e-6) return; d.normalize(); this.knock.addScaledVector(d, speed); }
+  /** Horizontal body circles (bone position, radius) for keeping two people from passing through each other. */
+  body(): [THREE.Vector3, number][] {
+    const out: [THREE.Vector3, number][] = []; const p = new THREE.Vector3();
+    for (const [i, r] of [[1, 0.24], [3, 0.22], [0, 0.14], [8, 0.11], [10, 0.11], [11, 0.1], [9, 0.1]] as [number, number][]) { this.bones[i][1].getWorldPosition(p); out.push([p.clone().setY(0), r]); }
+    return out;
+  }
 }

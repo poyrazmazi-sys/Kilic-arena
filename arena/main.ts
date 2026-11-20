@@ -57,7 +57,7 @@ async function main() {
 
   // ---------- input and touch controls
   const input = new Input(renderer.domElement);
-  if (mobile) { $('touch').style.display = 'block'; input.bindTouch($('stick'), $('knob'), { light: $('bLight'), heavy: $('bHeavy'), block: $('bBlock'), dodge: $('bDodge'), cam: $('bCam') }); }
+  if (mobile) { $('touch').style.display = 'block'; input.bindTouch($('stick'), $('knob'), { light: $('bLight'), heavy: $('bHeavy'), block: $('bBlock'), dodge: $('bDodge'), cam: $('bCam'), view: $('bView') }); }
 
   // ---------- game state
   let mode: Mode = 'menu', me: Fighter | null = null, opp: Fighter | null = null, bot: Bot | null = null, bot2: Bot | null = null;
@@ -74,22 +74,26 @@ async function main() {
   function resolve(def: Fighter, att: Fighter, k: 'l' | 'h', zone: Zone, bi: number, p: [number, number, number], ang: number): Code {
     if (!def.alive) return 'e';
     if (def.act === 'dodge' && def.actT < T.iframes) return 'e';
+    const away = def.root.position.clone().sub(att.root.position);
     const toAtt = att.root.position.clone().sub(def.root.position).setY(0).normalize();
     const facing = def.forward.dot(toAtt) > -0.05;
     if (def.act === 'block' && facing) {
-      if (def.actT < T.parry) return 'p';
-      if (k === 'h') { def.start('hit', T.guardBreak); return 'g'; }
-      def.st -= COST.blockHit; if (def.st <= 0) { def.st = 0; def.start('hit', T.guardBreak); return 'g'; }
-      return 'b';
+      if (def.actT < T.parry) { def.shove(away, 0.6); return 'p'; }
+      if (k === 'h') { def.start('hit', T.guardBreak); def.shove(away, 3.6); return 'g'; }
+      def.st -= COST.blockHit; if (def.st <= 0) { def.st = 0; def.start('hit', T.guardBreak); def.shove(away, 3); return 'g'; }
+      def.shove(away, 1.4); return 'b';
     }
     const dmg = Math.round((k === 'h' ? DMG.heavy : DMG.light) * ZONE[zone] * (def.act === 'stun' ? 1.25 : 1));
     def.hp = Math.max(0, def.hp - dmg);
     def.addWound({ b: bi, p, a: ang, s: (k === 'h' ? 0.26 : 0.15) * (zone === 'head' ? 0.7 : 1) });
-    if (def.hp <= 0) def.start('dead'); else def.start('hit', k === 'h' ? T.hitHeavy : T.hitLight);
+    if (def.hp <= 0) { def.start('dead'); def.shove(away, k === 'h' ? 4.5 : 3); } else { def.start('hit', k === 'h' ? T.hitHeavy : T.hitLight); def.shove(away, k === 'h' ? 3.8 : 1.9); }
     return 'h';
   }
   /** Effects and the attacker's reaction, shown the same way on every screen. */
   function outcome(def: Fighter, att: Fighter, code: Code, heavy: boolean, attackerIsLocal: boolean) {
+    hitStop = code === 'h' ? (heavy ? 0.11 : 0.06) : code === 'p' ? 0.12 : code === 'b' || code === 'g' ? 0.05 : 0;
+    const back = att.root.position.clone().sub(def.root.position);
+    if (attackerIsLocal) { if (code === 'p') att.shove(back, 3.2); else if (code === 'b') att.shove(back, 1.6); else if (code === 'h') att.vel.multiplyScalar(0.2); }
     const mid = def.chest().lerp(att.chest(), 0.4);
     if (code === 'h') {
       const w = def.wounds[def.wounds.length - 1]; const p = w ? def.woundWorld(w) : def.chest();
@@ -201,7 +205,8 @@ async function main() {
   $('status').textContent = '';
 
   // ---------- cameras
-  let shake = 0, camMode: 'drone' | 'stands' | 'orbit' = 'drone', shotI = 0, shotT = 0, seatI = 37, lookYaw = 0, lookPitch = -0.1, orbitYaw = 0.6, orbitDist = 10;
+  let firstPerson = store.get('fp') !== '0'; const eye = new THREE.Vector3(), fpLook = new THREE.Vector3();
+  let hitStop = 0, shake = 0, camMode: 'drone' | 'stands' | 'orbit' = 'drone', shotI = 0, shotT = 0, seatI = 37, lookYaw = 0, lookPitch = -0.1, orbitYaw = 0.6, orbitDist = 10;
   const camPos = new THREE.Vector3(0, 6, 14), camLook = new THREE.Vector3(0, 1, 0);
   const SHOTS = ['Wide', 'Side', 'Over the shoulder', 'Over the shoulder', 'From above', 'Low angle'];
   function droneShot(i: number, a: Fighter, b: Fighter, t: number): [THREE.Vector3, THREE.Vector3] {
@@ -223,6 +228,26 @@ async function main() {
   (window as any).__sim = (secs: number) => { const log: string[] = []; for (let i = 0; i < secs * 30; i++) { const h = fighters.map((f) => f.hp + f.act); frame(1 / 30, true); fighters.forEach((f, k) => { if (f.hp + f.act !== h[k]) log.push(`${(i / 30).toFixed(1)} F${k} ${f.act} hp${f.hp}`); }); } return { log: log.slice(-30), mode, hp: [fighters[0].hp, fighters[1].hp], act: fighters.map((f) => f.act), wins: fighters.map((f) => f.wins), round, wounds: fighters.map((f) => f.wounds.length) }; };
   (window as any).__start = (m: string, lv = 1) => { if (m === 'bot') { botLevel = lv; startBot(); } };
   (window as any).__ready = false;
+  (window as any).__jumps = (secs: number) => {
+    const hip = (f: Fighter) => f.model.getObjectByName('mixamorigHips')!.getWorldPosition(new THREE.Vector3());
+    let prev = fighters.map(hip), worst = 0, at = ''; const big: string[] = [];
+    for (let i = 0; i < secs * 30; i++) {
+      const acts = fighters.map((f) => f.act); frame(1 / 30, true); const now = fighters.map(hip);
+      now.forEach((p, k) => { const d = p.clone().setY(0).distanceTo(prev[k].clone().setY(0)); if (d > worst) { worst = d; at = `${acts[k]}->${fighters[k].act}`; } if (d > 0.12) big.push(`${(i / 30).toFixed(1)}s F${k} ${(d * 100).toFixed(0)}cm ${acts[k]}->${fighters[k].act}`); });
+      prev = now;
+    }
+    return { worstStepCm: +(worst * 100).toFixed(1), during: at, over12cm: big.slice(0, 12), count: big.length };
+  };
+  (window as any).__overlap = (secs: number, stack = false) => {
+    if (stack) { fighters[0].root.position.set(0, 0, 0); fighters[1].root.position.set(0.05, 0, 0); }
+    let worst = 0, sum = 0, n = 0, minRoot = 99;
+    for (let i = 0; i < secs * 30; i++) {
+      frame(1 / 30, true);
+      let pen = 0; for (const [pa, ra] of fighters[0].body()) for (const [pb, rb] of fighters[1].body()) pen = Math.max(pen, ra + rb - pa.distanceTo(pb));
+      worst = Math.max(worst, pen); sum += pen; n++; minRoot = Math.min(minRoot, fighters[0].root.position.distanceTo(fighters[1].root.position));
+    }
+    return { worstOverlapCm: +(worst * 100).toFixed(1), avgOverlapCm: +((sum / n) * 100).toFixed(2), minFeetApartM: +minRoot.toFixed(2), hp: fighters.map((f) => f.hp), act: fighters.map((f) => f.act) };
+  };
   (window as any).__online = (c: string, r: 'f' | 's') => goOnline(c, r);
   (window as any).__me = (x: number, z: number) => { if (me) { me.root.position.set(x, 0, z); } };
   (window as any).__state = () => ({ mode, role, oppPeer: !!oppPeer, watchers, hp: fighters.map((f) => f.hp), vis: fighters.map((f) => f.root.visible), wounds: fighters.map((f) => f.wounds.length), act: fighters.map((f) => f.act), pos: fighters.map((f) => [+f.root.position.x.toFixed(1), +f.root.position.z.toFixed(1)]) });
@@ -266,11 +291,27 @@ async function main() {
       }
     }
     for (const f of fighters) if (f.remote) f.follow(dt);
-    // --- keep fighters in the ring and apart
-    const [a, b] = fighters;
-    if (a.root.visible && b.root.visible) { const d = b.root.position.clone().sub(a.root.position).setY(0); const l = d.length(); if (l < 0.8 && l > 1e-4) { d.multiplyScalar((0.8 - l) / l / 2); if (!a.remote) a.root.position.sub(d); if (!b.remote) b.root.position.add(d); } }
-    for (const f of fighters) { const p = f.root.position; const l = Math.hypot(p.x, p.z); if (l > RING) { p.x *= RING / l; p.z *= RING / l; } }
+    // --- the wall stops you
+    for (const f of fighters) { const p = f.root.position; const l = Math.hypot(p.x, p.z); if (l > RING) { p.x *= RING / l; p.z *= RING / l; const n = new THREE.Vector3(p.x, 0, p.z).normalize(); const vn = f.vel.dot(n); if (vn > 0) f.vel.addScaledVector(n, -vn); const kn = f.knock.dot(n); if (kn > 0) f.knock.addScaledVector(n, -kn * 1.4); } }
     for (const f of fighters) if (f.root.visible) f.animate(dt);
+    // --- solid bodies: torso, hips, head and legs of one person never pass through the other's
+    { const [a, b] = fighters;
+      if (a.root.visible && b.root.visible) {
+        for (let it = 0; it < 2; it++) {
+          let worst = 0; const push = new THREE.Vector3();
+          for (const [pa, ra] of a.body()) for (const [pb, rb] of b.body()) {
+            const d = pa.clone().sub(pb); const l = d.length(), pen = ra + rb - l;
+            if (pen > worst) { worst = pen; push.copy(l > 1e-4 ? d.divideScalar(l) : a.root.position.clone().sub(b.root.position).setY(0).normalize()); }
+          }
+          if (worst <= 0) break;
+          const sa = a.remote ? 0 : b.remote ? 1 : 0.5, sb = 1 - sa;
+          a.root.position.addScaledVector(push, worst * sa); b.root.position.addScaledVector(push, -worst * sb);
+          // bodies that meet stop moving into each other
+          for (const [f, sgn] of [[a, 1], [b, -1]] as [Fighter, number][]) { if (f.remote) continue; const vn = f.vel.dot(push) * sgn; if (vn < 0) f.vel.addScaledVector(push, -vn * sgn); const kn = f.knock.dot(push) * sgn; if (kn < 0) f.knock.addScaledVector(push, -kn * sgn); }
+          a.root.updateMatrixWorld(true); b.root.updateMatrixWorld(true);
+        }
+      }
+    }
     // --- blade contact, found by whoever controls the attacker
     for (const att of fighters) {
       const def = att === fighters[0] ? fighters[1] : fighters[0];
@@ -293,7 +334,16 @@ async function main() {
     }
     // --- camera
     const cam = camera;
-    if ((mode === 'bot' || mode === 'duel') && me) {
+    if (cmd.view && (mode === 'bot' || mode === 'duel')) { firstPerson = !firstPerson; store.set('fp', firstPerson ? '1' : '0'); }
+    for (const f of fighters) if (f.hat) f.hat.visible = !(firstPerson && f === me && (mode === 'bot' || mode === 'duel'));
+    if ((mode === 'bot' || mode === 'duel') && me && firstPerson) {
+      // through your own eyes: the head carries the camera, the gaze stays on the opponent
+      const o = opp && opp.root.visible ? opp : null; me.eyes(eye);
+      const target = o ? (o.alive ? o.eyes(new THREE.Vector3()).setY(o.eyes(new THREE.Vector3()).y - 0.25) : o.chest().setY(0.4)) : eye.clone().addScaledVector(me.forward, 3);
+      camPos.lerp(eye, 1 - Math.exp(-30 * dt)); fpLook.lerp(target, 1 - Math.exp(-12 * dt)); camLook.copy(fpLook);
+      cam.near = 0.06; cam.fov = lerp(cam.fov, 75, dt * 4);
+    } else if ((mode === 'bot' || mode === 'duel') && me) {
+      cam.near = 0.05;
       const o = opp && opp.root.visible ? opp : null;
       const dir = o ? o.root.position.clone().sub(me.root.position).setY(0).normalize() : me.forward;
       const right = new THREE.Vector3(-dir.z, 0, dir.x);
@@ -317,6 +367,7 @@ async function main() {
         camPos.lerp(mid.clone().add(new THREE.Vector3(Math.sin(orbitYaw) * orbitDist, 2 + orbitDist * 0.3, Math.cos(orbitYaw) * orbitDist)), 1 - Math.exp(-6 * dt)); camLook.lerp(mid.setY(1.1), 1 - Math.exp(-6 * dt));
       }
     }
+    { const l = Math.hypot(camPos.x, camPos.z); if ((mode === 'bot' || mode === 'duel') && l > 14.7) { camPos.x *= 14.7 / l; camPos.z *= 14.7 / l; } if (camPos.y < 0.3) camPos.y = 0.3; }
     if (q.has('cam')) { const v = q.get('cam')!.split(',').map(Number); camPos.set(v[0], v[1], v[2]); camLook.set(v[3], v[4], v[5]); }
     shake = Math.max(0, shake - dt * 2.2);
     cam.position.copy(camPos).add(new THREE.Vector3((Math.random() - 0.5) * shake * 0.12, (Math.random() - 0.5) * shake * 0.12, 0)); cam.lookAt(camLook); cam.updateProjectionMatrix();
@@ -337,11 +388,11 @@ async function main() {
     $('aWins').textContent = '◆'.repeat(L.wins) + '◇'.repeat(Math.max(0, 2 - L.wins)); $('bWins').textContent = R ? '◆'.repeat(R.wins) + '◇'.repeat(Math.max(0, 2 - R.wins)) : '';
     $('round').textContent = `Round ${round}`;
     $('watch').textContent = mode === 'watch' ? `Watching · ${camMode === 'drone' ? 'Drone, ' + SHOTS[shotI].toLowerCase() : camMode === 'stands' ? 'Seat in the stands' : 'Free camera'} · ${mobile ? 'CAM' : 'C or the controller View button'} to switch` : (duel ? `Code ${code.toUpperCase()} · ${watchers} watching` : '');
-    const dev = mode === 'watch' ? '' : input.device === 'pad' ? 'Stick move · X light · Y heavy · LB or LT block · A dodge' : input.device === 'touch' ? '' : 'WASD move · Click light · E heavy · Hold right-click block · Space dodge · Esc menu';
+    const dev = mode === 'watch' ? '' : input.device === 'pad' ? 'Stick move · X light · Y heavy · LB or LT block · A dodge · Click a stick to change view' : input.device === 'touch' ? '' : 'WASD move · Click light · E heavy · Hold right-click block · Space dodge · V view · Esc menu';
     $('hint').textContent = dev;
     if (bannerT > 0) { bannerT -= dt; if (bannerT <= 0) $('banner').style.opacity = '0'; }
     if (popT > 0) { popT -= dt; $('pop').style.transform = 'translate(-50%,0) scale(1)'; if (popT <= 0) $('pop').style.opacity = '0'; }
-    $('bCam').style.display = mode === 'watch' ? 'flex' : 'none'; for (const id of ['bLight', 'bHeavy', 'bBlock', 'bDodge']) $(id).style.display = mode === 'watch' ? 'none' : 'flex';
+    $('bCam').style.display = mode === 'watch' ? 'flex' : 'none'; $('bView').style.display = mode === 'watch' ? 'none' : 'flex'; for (const id of ['bLight', 'bHeavy', 'bBlock', 'bDodge']) $(id).style.display = mode === 'watch' ? 'none' : 'flex';
   }
 
   addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight); });
@@ -349,7 +400,7 @@ async function main() {
   if (shot && q.get('start') === 'bot') { startBot(); }
   if (shot && q.has('watchdemo')) { startBot(); me = null; mode = 'watch'; bot = new Bot(2); bot2 = new Bot(1); hideMenu(); }
   function loop() {
-    const dt = Math.min(clock.getDelta(), 0.05);
+    const raw = Math.min(clock.getDelta(), 0.05); const dt = hitStop > 0 ? raw * 0.06 : raw; hitStop = Math.max(0, hitStop - raw);
     frame(dt);
     frames++; fpsT += dt;
     if (fpsT > 0.5) { const fps = frames / fpsT; frames = 0; fpsT = 0; (window as any).__ready = true; if (!shot && time > 4) { slow = fps < 50 ? slow + 1 : 0; if (slow >= 3 && scale > 0.6) { scale *= 0.85; slow = 0; renderer.setPixelRatio(basePR * scale); composer.setSize(innerWidth, innerHeight); } } }

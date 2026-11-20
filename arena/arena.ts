@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 const B = import.meta.env.BASE_URL;
 const tl = new THREE.TextureLoader();
-export const RING = 12.6; // fighters stay inside this radius
+export const RING = 14.75; // the arena wall (radius 15.2) minus a body's half-width
 
 function tex(name: string, rx: number, ry: number, aniso: number) {
   const mk = (s: string, srgb: boolean) => { const t = tl.load(`${B}tex/${name}_${s}.jpg`); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rx, ry); t.anisotropy = aniso; if (srgb) t.colorSpace = THREE.SRGBColorSpace; return t; };
@@ -18,7 +18,7 @@ export function buildArena(scene: THREE.Scene, aniso: number, mobile: boolean): 
   // --- sand floor
   const sand = tex('coast_sand_01', 9, 9, aniso); sand.color.set(0xe8d4b0);
   const floor = new THREE.Mesh(new THREE.CircleGeometry(15.2, 80), sand); floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
-  const rake = new THREE.Mesh(new THREE.RingGeometry(RING + 0.25, RING + 0.4, 96), new THREE.MeshStandardMaterial({ color: 0x8a6a48, roughness: 1, transparent: true, opacity: 0.5 }));
+  const rake = new THREE.Mesh(new THREE.RingGeometry(12.85, 13.0, 96), new THREE.MeshStandardMaterial({ color: 0x8a6a48, roughness: 1, transparent: true, opacity: 0.5 }));
   rake.rotation.x = -Math.PI / 2; rake.position.y = 0.005; scene.add(rake);
   const outer = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), new THREE.MeshStandardMaterial({ color: 0x7a6650, roughness: 1 })); outer.rotation.x = -Math.PI / 2; outer.position.y = -0.02; scene.add(outer);
 
