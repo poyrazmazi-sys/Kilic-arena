@@ -42,7 +42,7 @@ async function main() {
   $('status').textContent = 'Preparing the fighters...';
   await loadFighterAssets();
   const fx = new Fx(scene);
-  const fighters: [Fighter, Fighter] = [new Fighter(0), new Fighter(1)];
+  const fighters: [Fighter, Fighter] = q.has('samelooks') ? (() => { const a = new Fighter(0), b = new Fighter(0); b.side = 1; return [a, b] as [Fighter, Fighter]; })() : q.has('swaplooks') ? (() => { const a = new Fighter(1), b = new Fighter(0); a.side = 0; b.side = 1; return [a, b] as [Fighter, Fighter]; })() : [new Fighter(0), new Fighter(1)];
   fighters.forEach((f) => scene.add(f.root));
   const spawn = (f: Fighter) => f.reset(0, 0, f.side === 0 ? 3.4 : -3.4) as unknown as void;
   fighters.forEach((f) => { f.reset(0, f.side === 0 ? 3.4 : -3.4, f.side === 0 ? 0 : Math.PI); });
@@ -91,8 +91,11 @@ async function main() {
     return 'h';
   }
   /** Effects and the attacker's reaction, shown the same way on every screen. */
-  function outcome(def: Fighter, att: Fighter, code: Code, heavy: boolean, attackerIsLocal: boolean) {
-    const finisher = att.act === 'leap';
+  const stats: Record<string, number> = {};
+  const bump = (k: string, n = 1) => { stats[k] = (stats[k] ?? 0) + n; };
+  function outcome(def: Fighter, att: Fighter, code: Code, heavy: boolean, attackerIsLocal: boolean, kind?: 'l' | 'h' | 'x') {
+    const finisher = kind ? kind === 'x' : att.act === 'leap';
+    bump(`${finisher ? 'leap' : heavy ? 'heavy' : 'light'}_${code}`); bump(`side${att.side}_${code}`);
     if (finisher && code === 'h') { pop('Finisher!'); excite = 1; sfx2.cheer(); sfx2.gong(); shake = 1; }
     hitStop = finisher && code === 'h' ? 0.35 : code === 'h' ? (heavy ? 0.11 : 0.06) : code === 'p' ? 0.12 : code === 'b' || code === 'g' ? 0.05 : 0;
     const back = att.root.position.clone().sub(def.root.position);
@@ -236,7 +239,55 @@ async function main() {
   (window as any).__hip = () => fighters[0].model.getObjectByName('mixamorigHips')!.getWorldPosition(new THREE.Vector3()).y;
   (window as any).__actT = () => fighters[0].actT;
   (window as any).__blade = () => { const f = fighters[0], o = fighters[1]; const c = o.chest(); const tip = f.tipW, hilt = f.hiltW; return `tip(${tip.x.toFixed(2)},${tip.y.toFixed(2)},${tip.z.toFixed(2)}) hilt(${hilt.y.toFixed(2)},${hilt.z.toFixed(2)}) oppZ=${o.root.position.z.toFixed(2)} oppAct=${o.act} striking=${f.striking} swingHit=${f.swingHit}`; };
+  (window as any).__mirror = () => {
+    mode = 'watch'; bot = null; bot2 = null; duel = null; fighters.forEach((f) => { f.root.visible = true; });
+    fighters[0].reset(0, 0.6, 0); fighters[1].reset(0, -0.6, Math.PI);
+    for (let i = 0; i < 10; i++) frame(1 / 30, true);
+    const rows: string[] = []; const press = { mx: 0, my: 0, light: true, heavy: false, block: false, dodge: false }, none = { ...press, light: false };
+    for (let i = 0; i < 16; i++) {
+      for (const f of fighters) f.seen.copy(f.root.position);
+      const [x, y] = fighters; x.step(1 / 30, i === 0 ? press : none, y); y.step(1 / 30, i === 0 ? press : none, x);
+      frame(1 / 30, true);
+      rows.push(fighters.map((f, k) => { const o = fighters[1 - k]; const loc = f.root.worldToLocal(f.tipW.clone()); const h = o.hitTest(f.hiltW, f.tipW); const head = new THREE.Vector3(); (o as any).bones[0][0].getWorldPosition(head); return `F${k} ${f.act} t${f.actT.toFixed(2)} pos(${f.root.position.x.toFixed(3)},${f.root.position.z.toFixed(3)}) yaw ${f.root.rotation.y.toFixed(3)} hits ${h ? h.zone : '-'} oppHead(${head.x.toFixed(2)},${head.y.toFixed(2)},${head.z.toFixed(2)}) oppRoot(${o.root.position.x.toFixed(2)},${o.root.position.z.toFixed(2)})`; }).join(' | '));
+    }
+    return rows;
+  };
+  (window as any).__mirrorFight = (secs: number) => {
+    mode = 'watch'; duel = null; bot = new Bot(1); bot2 = new Bot(1); bot.setSeed(12345); bot2.setSeed(12345);
+    fighters.forEach((f) => { f.root.visible = true; f.leapUsed = false; }); fighters[0].reset(0, 3.4, 0); fighters[1].reset(0, -3.4, Math.PI);
+    for (let i = 0; i < secs * 30; i++) {
+      frame(1 / 30, true);
+      const [a, b] = fighters, pa = a.root.position, pb = b.root.position;
+      const dPos = Math.hypot(pa.x + pb.x, pa.z + pb.z), dAct = a.act !== b.act || Math.abs(a.actT - b.actT) > 1e-6, dHp = a.hp !== b.hp;
+      if (dPos > 1e-4 || dAct || dHp) return { divergedAtFrame: i, a: [a.act, +a.actT.toFixed(3), a.hp, +pa.x.toFixed(4), +pa.z.toFixed(4)], b: [b.act, +b.actT.toFixed(3), b.hp, +pb.x.toFixed(4), +pb.z.toFixed(4)] };
+    }
+    return { mirroredFor: secs, hp: fighters.map((f) => f.hp) };
+  };
   (window as any).__ready = false;
+  /** Fight simulator: plays bot-against-bot rounds at full speed and counts what happened to every swing. */
+  (window as any).__simulate = (rounds: number, lvA = 1, lvB = 1, swap = false) => {
+    const sz = (f: Fighter) => ((f.side === 0) !== swap ? 3.4 : -3.4), syaw = (f: Fighter) => ((f.side === 0) !== swap ? 0 : Math.PI);
+    for (const k in stats) delete stats[k];
+    mode = 'watch'; me = null; bot = new Bot(lvA); bot2 = new Bot(lvB); duel = null; fighters.forEach((f) => { f.root.visible = true; f.leapUsed = false; });
+    let done = 0, t = 0, roundT = 0, overlapFrames = 0, frames = 0; const lens: number[] = []; const seq = fighters.map((f) => f.actSeq), acts = fighters.map((f) => f.act), hitAtStart = fighters.map(() => false);
+    fighters.forEach((f) => f.reset(0, sz(f), syaw(f)));
+    while (done < rounds && t < rounds * 240) {
+      frame(1 / 30, true); t += 1 / 30; roundT += 1 / 30; frames++;
+      fighters.forEach((f, k) => {
+        if (f.actSeq !== seq[k]) { // an action ended or changed: count swings that never connected
+          if ((acts[k] === 'light' || acts[k] === 'heavy' || acts[k] === 'leap') && !hitAtStart[k]) bump(`${acts[k]}_miss`);
+          if (f.act === 'light' || f.act === 'heavy' || f.act === 'leap') bump(`${f.act}_thrown`); if (f.act === 'dodge') bump('dodges'); if (f.act === 'block') bump('blocks_raised');
+          seq[k] = f.actSeq; acts[k] = f.act; hitAtStart[k] = false;
+        }
+        if (f.swingHit) hitAtStart[k] = true;
+      });
+      fighters.forEach((f, k) => { if (f.striking) { const o = fighters[1 - k]; const c = o.chest(); const d = Math.min(f.tipW.distanceTo(c), f.tipW.clone().lerp(f.hiltW, 0.5).distanceTo(c)); bump(`reach${k}_n`); bump(`reach${k}_sum`, d); bump(`range${k}_sum`, f.root.position.distanceTo(o.root.position)); const to = o.root.position.clone().sub(f.root.position).setY(0).normalize(); bump(`face${k}_sum`, THREE.MathUtils.radToDeg(Math.acos(THREE.MathUtils.clamp(f.forward.dot(to), -1, 1)))); const hips = f.model.getObjectByName('mixamorigHips')!; const hf = new THREE.Vector3(0, 0, 1).applyQuaternion(hips.getWorldQuaternion(new THREE.Quaternion())).setY(0).normalize(); bump(`hipface${k}_sum`, THREE.MathUtils.radToDeg(Math.acos(THREE.MathUtils.clamp(hf.dot(to), -1, 1)))); } });
+      let pen = 0; for (const [pa, ra] of fighters[0].body()) for (const [pb, rb] of fighters[1].body()) pen = Math.max(pen, ra + rb - pa.distanceTo(pb)); if (pen > 0.01) overlapFrames++;
+      if (fighters.some((f) => !f.alive) && roundT > 0.5) { lens.push(roundT); bump(fighters[0].alive && !fighters[1].alive ? 'winsA' : fighters[1].alive && !fighters[0].alive ? 'winsB' : 'draws'); done++; roundT = 0; fighters.forEach((f) => { f.reset(0, sz(f), syaw(f)); f.leapUsed = false; }); }
+    }
+    const avg = lens.reduce((a, b) => a + b, 0) / Math.max(1, lens.length);
+    return { rounds: lens.length, avgRoundSec: +avg.toFixed(1), overlapFramesPct: +((overlapFrames / frames) * 100).toFixed(2), ...stats };
+  };
   (window as any).__jumps = (secs: number) => {
     const hip = (f: Fighter) => f.model.getObjectByName('mixamorigHips')!.getWorldPosition(new THREE.Vector3());
     let prev = fighters.map(hip), worst = 0, at = ''; const big: string[] = [];
@@ -263,6 +314,7 @@ async function main() {
 
   function frame(dt: number, sim = false) {
     time += dt;
+    for (const f of fighters) f.seen.copy(f.root.position);
     const cmd = input.read(); for (const k of pressQ) (cmd as any)[k] = true; pressQ.clear();
     // --- local fighter and bot
     if ((mode === 'bot' || mode === 'duel') && me) {
@@ -271,7 +323,7 @@ async function main() {
       if (me.actSeq !== before && (me.act === 'light' || me.act === 'heavy' || me.act === 'leap')) { sfx2.whoosh(me.act !== 'light'); if (me.act === 'leap') excite = Math.min(1, excite + 0.4); }
     }
     if (mode === 'bot' && opp && me && bot) { const before = opp.actSeq; opp.step(dt, bot.cmd(opp, me, dt), me); if (opp.actSeq !== before && (opp.act === 'light' || opp.act === 'heavy')) sfx2.whoosh(opp.act === 'heavy'); }
-    if (mode === 'watch' && !duel && bot && bot2) { const [x, y] = fighters; x.step(dt, bot.cmd(x, y, dt), y); y.step(dt, bot2.cmd(y, x, dt), x); } // demo for testing cameras
+    if (mode === 'watch' && !duel && bot && bot2) { const [x, y] = fighters; const sw = (window as any).__swapBots; const cx = (sw ? bot2 : bot).cmd(x, y, dt), cy = (sw ? bot : bot2).cmd(y, x, dt); if ((window as any).__rev) { y.step(dt, cy, x); x.step(dt, cx, y); } else { x.step(dt, cx, y); y.step(dt, cy, x); } } // both decide from the same moment // demo for testing cameras
     // --- network
     if (duel) {
       const peers = duel.peers();
@@ -321,14 +373,18 @@ async function main() {
         }
       }
     }
-    // --- blade contact, found by whoever controls the attacker
+    // --- blade contact, found by whoever controls the attacker. Both blades are checked before either
+    // blow is applied, so two fighters who strike at the same moment both land (a double hit).
+    const landed: [Fighter, Fighter, { zone: Zone; bi: number; point: THREE.Vector3 }, 'l' | 'h' | 'x', number][] = [];
     for (const att of fighters) {
       const def = att === fighters[0] ? fighters[1] : fighters[0];
       if (att.remote || !att.root.visible || !def.root.visible || !att.striking || att.swingHit) continue;
       if ((mode === 'duel' && att !== me) || (mode === 'watch' && duel) || mode === 'menu') continue;
-      const hit = def.hitTest(att.hiltW, att.tipW); if (!hit) continue;
-      att.swingHit = true; const k = att.act === 'leap' ? 'x' : att.act === 'heavy' ? 'h' : 'l', bl = def.boneLocal(hit.bi, hit.point), ang = (Math.random() - 0.5) * 1.2 + (att.combo % 2 ? 0.5 : -0.5);
-      if (mode === 'bot' || (mode === 'watch' && !duel)) outcome(def, att, resolve(def, att, k, hit.zone, hit.bi, bl, ang), k === 'h', true);
+      const hit = def.hitTest(att.hiltW, att.tipW); if (hit) landed.push([att, def, hit, att.act === 'leap' ? 'x' : att.act === 'heavy' ? 'h' : 'l', att.combo]); // what kind of blow it was, before anything is applied
+    }
+    for (const [att, def, hit, k, combo] of landed) {
+      att.swingHit = true; const bl = def.boneLocal(hit.bi, hit.point), ang = (Math.random() - 0.5) * 1.2 + (combo % 2 ? 0.5 : -0.5);
+      if (mode === 'bot' || (mode === 'watch' && !duel)) outcome(def, att, resolve(def, att, k, hit.zone, hit.bi, bl, ang), k !== 'l', true, k);
       else claims.push([++claimSeq, k, hit.zone, hit.bi, ...bl, +ang.toFixed(2)]);
     }
     // --- rounds (each fighter's client keeps its own score in step with what it sees)

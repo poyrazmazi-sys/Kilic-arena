@@ -10,7 +10,7 @@ const clips: Record<string, THREE.AnimationClip> = {};
 // Timings (seconds). Active windows are when the blade can connect.
 export const T = {
   light: 0.56, lightWin: [0.2, 0.44] as const, heavy: 1.0, heavyWin: [0.42, 0.84] as const,
-  dodge: 0.5, iframes: 0.32, leap: 1.5, leapWin: [0.76, 1.05] as const, leapAir: [0.3, 0.98] as const, parry: 0.22, hitLight: 0.42, hitHeavy: 0.75, stun: 1.05, recoil: 0.38, guardBreak: 0.85,
+  dodge: 0.5, iframes: 0.32, leap: 1.5, leapWin: [0.76, 1.05] as const, leapAir: [0.3, 0.98] as const, parry: 0.15, hitLight: 0.42, hitHeavy: 0.75, stun: 1.05, recoil: 0.38, guardBreak: 0.85,
 };
 export const COST = { light: 9, heavy: 22, dodge: 18, blockHit: 14 };
 export const DMG = { light: 13, heavy: 30 };
@@ -181,7 +181,8 @@ export class Fighter {
   reset(x: number, z: number, yaw: number) {
     this.hp = 100; this.st = 100; this.root.position.set(x, 0, z); this.root.rotation.y = yaw; this.target.set(x, 0, z); this.targetYaw = yaw;
     this.vel.set(0, 0, 0); this.knock.set(0, 0, 0);
-    this.clearWounds(); this.act = 'idle'; this.actT = 0; this.actSeq++; this.cur = ''; this.play('idle', 0); this.model.rotation.z = 0; this.model.position.y = 0;
+    this.clearWounds(); this.act = 'idle'; this.actT = 0; this.actSeq++;
+    this.mixer.stopAllAction(); this.cur = ''; this.play('idle', 0); // nothing from the last round (a fall, a flinch) may linger underneath this.model.rotation.z = 0; this.model.position.y = 0;
   }
 
   /** Local simulation for the player's own fighter or a bot. Returns nothing; hits are found after animation. */
@@ -199,7 +200,7 @@ export class Fighter {
     } else if (free && cmd.light && this.st >= COST.light) { this.st -= COST.light; this.start('light', T.light, 0); }
     else if (free && cmd.leap && !this.leapUsed && this.st >= 30) {
       // the once-a-match leap: aim for the opponent's chest, no further than a strong jump carries you
-      this.leapUsed = true; this.st -= 30; this.leapDist = opp ? THREE.MathUtils.clamp(opp.root.position.distanceTo(this.root.position) - 0.75, 0, 4.6) : 2.5; this.start('leap', T.leap);
+      this.leapUsed = true; this.st -= 30; this.leapDist = opp ? THREE.MathUtils.clamp(opp.seen.distanceTo(this.root.position) - 0.75, 0, 4.6) : 2.5; this.leapAimed = false; this.start('leap', T.leap);
     }
     else if (free && cmd.heavy && this.st >= COST.heavy) { this.st -= COST.heavy; this.start('heavy', T.heavy); }
     else if (a === 'idle' && cmd.block) { this.start('block'); }
@@ -216,12 +217,14 @@ export class Fighter {
     const now = this.act; let lx = 0, ly = 0;
     if (now === 'idle') { sp = 2.5; lx = this.move.x; ly = this.move.y; }
     else if (now === 'block') { sp = 1.3; lx = this.move.x; ly = this.move.y; }
-    else if (now === 'light') { sp = 1.6 * Math.max(0, Math.sin(Math.min(1, this.actT / 0.34) * Math.PI)); ly = 1; }
-    else if (now === 'heavy') { sp = 2.0 * Math.max(0, Math.sin(THREE.MathUtils.clamp((this.actT - 0.2) / 0.45, 0, 1) * Math.PI)); ly = 1; }
+    else if (now === 'light') { sp = 2.3 * Math.max(0, Math.sin(Math.min(1, this.actT / 0.34) * Math.PI)); ly = 1; }
+    else if (now === 'heavy') { sp = 2.8 * Math.max(0, Math.sin(THREE.MathUtils.clamp((this.actT - 0.2) / 0.45, 0, 1) * Math.PI)); ly = 1; }
     else if (now === 'leap') {
       // in the air, steer to land just in front of the opponent, wherever they have moved
       const [t0, t1] = T.leapAir;
-      if (this.actT > t0 && this.actT < t1) { const left = opp ? Math.max(0, opp.root.position.distanceTo(this.root.position) - 0.8) : this.leapDist * (1 - (this.actT - t0) / (t1 - t0)); sp = Math.min(9, left / Math.max(0.06, t1 - this.actT)); } else sp = 0;
+      // aim once, at take-off; after that the body is committed to its arc, like a real jump
+      if (this.actT > t0 && !this.leapAimed) { this.leapAimed = true; this.leapTarget.copy(opp ? opp.seen : this.root.position.clone().addScaledVector(this.forward, this.leapDist)); const d = this.leapTarget.clone().sub(this.root.position).setY(0); this.leapDist = Math.max(0, Math.min(4.6, d.length() - 0.8)); this.leapDir.copy(d.normalize()); }
+      if (this.actT > t0 && this.actT < t1) { const k = (this.actT - t0) / (t1 - t0); sp = (this.leapDist / (t1 - t0)) * 1.5708 * Math.sin(k * Math.PI); } else sp = 0;
       ly = 1;
     }
     else if (now === 'dodge') { sp = 4.8 * Math.sin(Math.min(1, this.actT / T.dodge) * Math.PI); lx = this.dodgeDir.x; ly = this.dodgeDir.y; }
@@ -229,8 +232,8 @@ export class Fighter {
     this.speed = sp * Math.hypot(lx, ly);
     // facing: lock on to the opponent
     if (opp) {
-      const d = opp.root.position.clone().sub(this.root.position); const want = Math.atan2(-d.x, -d.z);
-      const rate = now === 'idle' || now === 'block' ? 12 : now === 'leap' ? (this.actT < T.leapWin[1] ? 6 : 0) : now === 'light' ? 5 : now === 'heavy' ? (this.actT < 0.4 ? 4 : 1) : 0;
+      const d = opp.seen.clone().sub(this.root.position); const want = Math.atan2(-d.x, -d.z);
+      const rate = now === 'idle' || now === 'block' ? 12 : now === 'leap' ? (this.actT < T.leapAir[0] ? 6 : 0) : now === 'light' ? 5 : now === 'heavy' ? (this.actT < 0.4 ? 4 : 1) : 0;
       let dy = want - this.root.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
       this.root.rotation.y += THREE.MathUtils.clamp(dy, -rate * dt, rate * dt);
     }
@@ -315,7 +318,9 @@ export class Fighter {
   woundWorld(w: Wound) { const p = new THREE.Vector3(...w.p); return this.bones[w.b][0].localToWorld(p); }
   boneLocal(bi: number, world: THREE.Vector3): [number, number, number] { const p = this.bones[bi][0].worldToLocal(world.clone()); return [+p.x.toFixed(1), +p.y.toFixed(1), +p.z.toFixed(1)]; }
   chest() { return this.root.position.clone().setY(1.3); }
-  hat: THREE.Object3D | null = null; leapUsed = false; leapDist = 0;
+  /** where the opponent sees this fighter: its position at the start of the frame, so the update order is fair */
+  seen = new THREE.Vector3();
+  hat: THREE.Object3D | null = null; leapUsed = false; leapDist = 0; leapAimed = false; leapTarget = new THREE.Vector3(); leapDir = new THREE.Vector3();
   /** Where this fighter's eyes are, following the head as it moves. */
   eyes(out: THREE.Vector3) { const h = this.model.getObjectByName('mixamorigHead')!; h.getWorldPosition(out); out.y += 0.08; return out.addScaledVector(this.forward, 0.16); }
   /** Push the body (world m/s), e.g. when struck. */
