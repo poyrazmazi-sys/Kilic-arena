@@ -4,8 +4,16 @@ import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js
 import { fetchBin } from '../src/bin';
 
 const B = import.meta.env.BASE_URL;
-let proto: THREE.Object3D, sword: THREE.Object3D, baseScale = 1, swordLen = 0.9;
-const clips: Record<string, THREE.AnimationClip> = {};
+let sword: THREE.Object3D, swordLen = 0.9;
+/** One playable fighter: its model, its clips, its scale, and how the sword sits in its hand. */
+interface Cast { proto: THREE.Object3D; clips: Record<string, THREE.AnimationClip>; scale: number; gripQ: THREE.Quaternion; gripP: THREE.Vector3; knight: boolean }
+export const CAST: Record<string, Cast> = {};
+export const FIGHTERS = [
+  { id: 'davud', name: 'Davud', title: 'Janissary of the 1st Orta' },
+  { id: 'theodoros', name: 'Theodoros', title: 'Varangian-trained guard of Blachernae' },
+  { id: 'lorenzo', name: 'Lorenzo', title: 'Genoese captain under Giustiniani' },
+];
+let clips: Record<string, THREE.AnimationClip> = {}, proto: THREE.Object3D, baseScale = 1;
 
 // Timings (seconds). Active windows are when the blade can connect.
 export const T = {
@@ -29,23 +37,13 @@ const HB: [string, string, number, Zone][] = [
   ['RightUpLeg', 'RightLeg', 0.085, 'leg'], ['RightLeg', 'RightFoot', 0.065, 'leg'],
 ];
 
-export async function loadFighterAssets() {
-  const loader = new GLTFLoader();
-  const [kg, sg] = await Promise.all([
-    fetchBin(`${B}models/knight.json`).then((b) => loader.parseAsync(b, '')),
-    fetchBin(`${B}models/kilij.json`).then((b) => loader.parseAsync(b, '')),
-  ]);
-  proto = kg.scene;
-  proto.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false; } });
-  proto.updateMatrixWorld(true);
-  const wy = (n: string) => proto.getObjectByName('mixamorig' + n)?.getWorldPosition(new THREE.Vector3()).y ?? 0;
-  const h = wy('HeadTop_End') - Math.min(wy('LeftToeBase'), wy('LeftFoot'));
-  baseScale = h > 0.1 ? 1.78 / (h + 0.06) : 1;
+function prepareClips(anims: THREE.AnimationClip[]) {
   // Every clip is anchored to the same hip spot (the idle pose's), so switching clips never jumps the body.
+  const out: Record<string, THREE.AnimationClip> = {};
   const hipTrack = (c: THREE.AnimationClip) => c.tracks.find((t) => /Hips\.position$/.test(t.name));
-  const idleHip = hipTrack(kg.animations.find((c) => c.name === 'idle')!)!.values;
+  const idleHip = hipTrack(anims.find((c) => c.name === 'idle')!)!.values;
   const iv = [idleHip[0], idleHip[1], idleHip[2]], up = iv.map(Math.abs).indexOf(Math.max(...iv.map(Math.abs)));
-  for (const c of kg.animations) {
+  for (const c of anims) {
     const tr = hipTrack(c);
     if (tr) {
       const v = tr.values, n = v.length / 3, first = [v[0], v[1], v[2]];
@@ -54,11 +52,51 @@ export async function loadFighterAssets() {
         v[i * 3 + k] = c.name.startsWith('dying') ? v[i * 3 + k] - first[k] + iv[k] : iv[k]; // falls keep their travel, from the same start
       }
     }
-    clips[c.name] = c;
+    out[c.name] = c;
   }
-  const s0 = clips.sword_slash;
-  const sub = (n: string, a: number, b: number) => { clips[n] = THREE.AnimationUtils.subclip(s0, n, a, b, 30); };
+  const s0 = out.sword_slash;
+  const sub = (n: string, a: number, b: number) => { out[n] = THREE.AnimationUtils.subclip(s0, n, a, b, 30); };
   sub('light0', 10, 34); sub('light1', 40, 61); sub('light2', 67, 88); sub('heavy', 82, 106); sub('guard', 68, 70);
+  return out;
+}
+function handWorld(model: THREE.Object3D, anims: Record<string, THREE.AnimationClip>) {
+  // hold the first frame of the slash, the pose in which both skeletons agree most
+  const mixer = new THREE.AnimationMixer(model); const a = mixer.clipAction(anims.sword_slash); a.play(); mixer.setTime(0.1);
+  model.updateMatrixWorld(true); const h = model.getObjectByName('mixamorigRightHand')!;
+  const q = h.getWorldQuaternion(new THREE.Quaternion()), sc = h.getWorldScale(new THREE.Vector3()).x; mixer.stopAllAction(); return { q, sc };
+}
+
+export async function loadFighterAssets() {
+  const loader = new GLTFLoader();
+  const [kg, sg, ...fg] = await Promise.all([
+    fetchBin(`${B}models/knight.json`).then((b) => loader.parseAsync(b, '')),
+    fetchBin(`${B}models/kilij.json`).then((b) => loader.parseAsync(b, '')),
+    ...FIGHTERS.map((f) => fetchBin(`${B}models/fighter_${f.id}.json`).then((b) => loader.parseAsync(b, ''))),
+  ]);
+  const setup = (scene: THREE.Object3D) => scene.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false; } });
+  // the Mixamo knight is the reference: the sword grip was tuned on its hand
+  setup(kg.scene); kg.scene.updateMatrixWorld(true);
+  const wy = (o: THREE.Object3D, n: string) => o.getObjectByName('mixamorig' + n)?.getWorldPosition(new THREE.Vector3()).y ?? 0;
+  const h = wy(kg.scene, 'HeadTop_End') - Math.min(wy(kg.scene, 'LeftToeBase'), wy(kg.scene, 'LeftFoot'));
+  const knightScale = h > 0.1 ? 1.78 / (h + 0.06) : 1;
+  const kClips = prepareClips(kg.animations);
+  const kScaled = kg.scene.clone(); kScaled.scale.setScalar(knightScale);
+  const kh = handWorld(kScaled, kClips);
+  const gripLocalQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0)), gripLocalP = new THREE.Vector3(0, 8.5, 2.2);
+  CAST.knight = { proto: kg.scene, clips: kClips, scale: knightScale, gripQ: gripLocalQ, gripP: gripLocalP, knight: true };
+  FIGHTERS.forEach((f, i) => {
+    const g = fg[i]; setup(g.scene);
+    // MPFB skeletons have no head-top marker: add one 20 cm above the head for the head hitbox
+    g.scene.updateMatrixWorld(true);
+    const head = g.scene.getObjectByName('mixamorigHead')!;
+    if (!g.scene.getObjectByName('mixamorigHeadTop_End')) { const t = new THREE.Object3D(); t.name = 'mixamorigHeadTop_End'; const w = head.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.2, 0)); head.add(t); t.position.copy(head.worldToLocal(w)); }
+    const cl = prepareClips(g.animations), mh = handWorld(g.scene, cl);
+    // same sword orientation in the world as on the knight's hand: local = hand^-1 * knightHand * knightLocal
+    const q = mh.q.clone().invert().multiply(kh.q).multiply(gripLocalQ);
+    const offWorld = gripLocalP.clone().multiplyScalar(kh.sc).applyQuaternion(kh.q);
+    const p = offWorld.applyQuaternion(mh.q.clone().invert()).divideScalar(mh.sc);
+    CAST[f.id] = { proto: g.scene, clips: cl, scale: 1, gripQ: q, gripP: p, knight: false };
+  });
   // sword: put the grip at the origin, blade along +Y
   sword = sg.scene;
   sword.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) { m.castShadow = true; (m.material as THREE.MeshStandardMaterial).envMapIntensity = 1.3; } });
@@ -101,9 +139,9 @@ function segSeg(p1: THREE.Vector3, q1: THREE.Vector3, p2: THREE.Vector3, q2: THR
 }
 
 export class Fighter {
-  root = new THREE.Group(); model: THREE.Object3D; mixer: THREE.AnimationMixer;
+  root = new THREE.Group(); model!: THREE.Object3D; mixer!: THREE.AnimationMixer;
   private actions: Record<string, THREE.AnimationAction> = {}; private cur = ''; private bones: THREE.Object3D[][] = [];
-  private blade = new THREE.Group(); private woundMeshes: THREE.Mesh[] = [];
+  private blade = new THREE.Group(); saluteT = 0; private woundMeshes: THREE.Mesh[] = [];
   /** walking velocity (eases toward what the player asks for) and knockback, both world m/s */
   vel = new THREE.Vector3(); knock = new THREE.Vector3();
   hp = 100; st = 100; act: Act = 'idle'; actT = 0; actSeq = 0; combo = 0; queued = false; swingHit = false; actDur = 0;
@@ -112,10 +150,20 @@ export class Fighter {
   remote = false; target = new THREE.Vector3(); targetYaw = 0; animYaw = 0;
   readonly hiltW = new THREE.Vector3(); readonly tipW = new THREE.Vector3();
 
-  constructor(public side: 0 | 1) {
+  character = ''; clips: Record<string, THREE.AnimationClip> = {};
+  constructor(public side: 0 | 1, character = side === 0 ? 'davud' : 'theodoros') {
+    this.build(character);
+  }
+
+  /** (Re)build the body for a fighter from the cast; the fighter's state is kept. */
+  build(character: string) {
+    const c = CAST[character] ?? CAST.davud; this.character = character; proto = c.proto; clips = c.clips; this.clips = c.clips; baseScale = c.scale;
+    if (this.model) { this.clearWounds(); this.mixer.stopAllAction(); this.root.remove(this.model); }
+    this.actions = {}; this.cur = '';
     this.model = cloneSkinned(proto);
-    const tint = side === 0 ? 0xffd2c8 : 0xb8d8c8;
-    this.model.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) { const c = (m.material as THREE.MeshStandardMaterial).clone(); c.color.set(tint); c.envMapIntensity = 1.1; m.material = c; } });
+    const side = this.side;
+    const tint = !c.knight ? 0xffffff : side === 0 ? 0xffd2c8 : 0xb8d8c8;
+    this.model.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) { const c = (m.material as THREE.MeshStandardMaterial).clone(); if (tint !== 0xffffff) c.color.set(tint); c.envMapIntensity = 1.1; m.material = c; } });
     this.model.scale.setScalar(baseScale); this.model.rotation.y = Math.PI;
     this.root.add(this.model);
     const get = (n: string) => this.model.getObjectByName('mixamorig' + n)!;
@@ -123,12 +171,12 @@ export class Fighter {
     // sword in the right hand
     const hand = get('RightHand'); this.model.updateMatrixWorld(true);
     const ws = hand.getWorldScale(new THREE.Vector3()).x;
-    const grip = new THREE.Group(); grip.scale.setScalar(1 / (ws * baseScale) * baseScale); grip.position.set(0, 8.5, 2.2);
-    const q = new URLSearchParams(location.search).get('gr')?.split(',').map(Number) ?? [-Math.PI / 2, 0, 0];
-    grip.rotation.set(q[0], q[1], q[2]);
+    const grip = new THREE.Group(); grip.scale.setScalar(1 / ws); grip.position.copy(c.gripP); grip.quaternion.copy(c.gripQ);
+    this.blade = new THREE.Group();
     grip.add(sword.clone(true)); grip.add(this.blade); hand.add(grip);
     this.blade.position.set(0, 0, 0);
-    // headwear: a janissary bork for side 0, a turban for side 1
+    // headwear for the old knight model (the cast fighters wear their own)
+    if (c.knight) {
     const head = get('Head'), hs = 1 / head.getWorldScale(new THREE.Vector3()).x * baseScale;
     const hat = new THREE.Group(); hat.scale.setScalar(hs / baseScale); hat.position.set(0, 11.5, -0.5);
     const felt = new THREE.MeshStandardMaterial({ color: side === 0 ? 0xeee8dc : 0xf2efe6, roughness: 0.95 });
@@ -143,8 +191,9 @@ export class Fighter {
       hat.add(t1, cap);
     }
     hat.traverse((o) => { (o as THREE.Mesh).castShadow = true; }); head.add(hat); this.hat = hat;
+    } else this.hat = null;
     this.mixer = new THREE.AnimationMixer(this.model);
-    for (const n in clips) this.actions[n] = this.mixer.clipAction(clips[n]);
+    for (const n in this.clips) this.actions[n] = this.mixer.clipAction(this.clips[n]);
     this.play('idle', 0);
   }
 
@@ -168,11 +217,11 @@ export class Fighter {
   /** Picks the animation for the current action. `at` lets remote copies join mid-action. */
   animStart(at: number) {
     const a = this.act;
-    if (a === 'light') { const c = clips['light' + this.combo]; this.play('light' + this.combo, 0.16, true, c.duration / T.light, true, at * c.duration / T.light); }
-    else if (a === 'heavy') { const c = clips.heavy; this.play('heavy', 0.2, true, c.duration / T.heavy, true, at * c.duration / T.heavy); }
+    if (a === 'light') { const c = this.clips['light' + this.combo]; this.play('light' + this.combo, 0.16, true, c.duration / T.light, true, at * c.duration / T.light); }
+    else if (a === 'heavy') { const c = this.clips.heavy; this.play('heavy', 0.2, true, c.duration / T.heavy, true, at * c.duration / T.heavy); }
     else if (a === 'block') this.play('block', 0.16, false, 1);
-    else if (a === 'dodge') { const n = Math.abs(this.dodgeDir.x) > 0.35 ? 'dodge_side' : 'dodge_back'; const c = clips[n]; this.play(n, 0.08, true, c.duration / T.dodge, true, at * c.duration / T.dodge); }
-    else if (a === 'leap') { const c = clips.leap; this.play('leap', 0.12, true, c.duration / T.leap, true, at * c.duration / T.leap); }
+    else if (a === 'dodge') { const n = Math.abs(this.dodgeDir.x) > 0.35 ? 'dodge_side' : 'dodge_back'; const c = this.clips[n]; this.play(n, 0.08, true, c.duration / T.dodge, true, at * c.duration / T.dodge); }
+    else if (a === 'leap') { const c = this.clips.leap; this.play('leap', 0.12, true, c.duration / T.leap, true, at * c.duration / T.leap); }
     else if (a === 'hit' || a === 'recoil') this.play('hit_reaction', 0.12, true, 2.4, true, 0.15);
     else if (a === 'stun') this.play('hit_reaction', 0.08, true, 1.1, true, 0.1);
     else if (a === 'dead') this.play(Math.random() < 0.5 ? 'dying_1' : 'dying_2', 0.2, true, 1.25, true);
@@ -265,11 +314,15 @@ export class Fighter {
     const a = this.act;
     if (a === 'idle' || a === 'block') {
       const m = this.move, mag = m.length();
+      const real = !!this.clips.strafe_left;
       if (a === 'block') { this.play('block', 0.16, false, 1); }
+      else if (this.saluteT > 0 && this.clips.bow) { this.saluteT -= dt; this.play('bow', 0.3, true, 1.2); }
+      else if (mag > 0.15 && real && Math.abs(m.x) > Math.abs(m.y)) this.play(m.x > 0 ? 'strafe_right' : 'strafe_left', 0.22, false, Math.max(0.8, mag * 1.3));
+      else if (mag > 0.15 && real && m.y < -0.2) this.play('walk_back', 0.22, false, Math.max(0.8, mag * 1.3));
       else if (mag > 0.15) { const back = m.y < -0.2; this.play('walking', 0.2, false, (back ? -1 : 1) * Math.max(0.7, mag * 1.35)); }
       else this.play('idle', 0.25);
-      // face the walk direction a little when stepping sideways
-      const want = mag > 0.15 ? THREE.MathUtils.clamp(Math.atan2(-m.x, Math.abs(m.y) + 0.001) * (m.y < -0.2 ? -1 : 1), -0.9, 0.9) : 0;
+      // with no sidestep recording, face the walk direction a little when stepping sideways
+      const want = mag > 0.15 && !real ? THREE.MathUtils.clamp(Math.atan2(-m.x, Math.abs(m.y) + 0.001) * (m.y < -0.2 ? -1 : 1), -0.9, 0.9) : 0;
       this.animYaw += (want - this.animYaw) * Math.min(1, dt * 10);
     } else this.animYaw += (0 - this.animYaw) * Math.min(1, dt * 12);
     this.model.rotation.y = Math.PI + this.animYaw;

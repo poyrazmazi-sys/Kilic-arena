@@ -4,7 +4,7 @@ import { N8AOPostPass } from 'n8ao';
 import { loadSky } from '../src/looks';
 import { initAudio, crowd, sfx2, setVolume } from '../src/audio';
 import { buildArena, RING } from './arena';
-import { Fighter, loadFighterAssets, T, COST, DMG, ZONE, ACTS, Zone } from './fighter';
+import { Fighter, loadFighterAssets, T, COST, DMG, ZONE, ACTS, Zone, FIGHTERS, CAST } from './fighter';
 import { Input } from './input';
 import { Bot } from './bot';
 import { Fx } from './fx';
@@ -117,7 +117,7 @@ async function main() {
   function myState() {
     const f = me!;
     return {
-      r: role, t: joinT, nm: ($('name') as HTMLInputElement).value.slice(0, 16) || 'Janissary', sd: mySide,
+      ch: myChar, r: role, t: joinT, nm: ($('name') as HTMLInputElement).value.slice(0, 16) || 'Janissary', sd: mySide,
       x: +f.root.position.x.toFixed(2), z: +f.root.position.z.toFixed(2), y: +f.root.rotation.y.toFixed(2),
       a: ACTS.indexOf(f.act), s: f.actSeq, at: +f.actT.toFixed(2), c: f.combo, dd: [+f.dodgeDir.x.toFixed(2), +f.dodgeDir.y.toFixed(2)],
       hp: f.hp, st: Math.round(f.st), wn: f.wins, rd: round,
@@ -126,6 +126,7 @@ async function main() {
   }
   function applyRemote(f: Fighter, p: Record<string, any>, key: string, other: Fighter | null, otherIsMe: boolean) {
     if (typeof p.x !== 'number') return;
+    if (typeof p.ch === 'string' && CAST[p.ch] && f.character !== p.ch) f.build(p.ch);
     f.remote = true; f.target.set(p.x, 0, p.z); f.targetYaw = p.y; f.hp = p.hp; f.st = p.st; f.wins = p.wn ?? 0; f.name = String(p.nm ?? '').slice(0, 16);
     const sn = seen.get(key) ?? { claim: 0, res: 0, synced: false };
     if (!sn.synced) { f.root.position.copy(f.target); f.root.rotation.y = p.y; }
@@ -151,7 +152,7 @@ async function main() {
     code = c; role = wantRole; joinT = Date.now(); seen.clear(); claims.length = 0; results.length = 0; claimSeq = 0; round = 1; overT = -1; matchOver = false;
     hideMenu(); banner('Connecting...', '', 15);
     try { duel = await room.join('duel-' + c); } catch (e) { console.warn(e); showMenu(); banner('Could not connect', 'Check the code and try again', 4); return; }
-    mode = role === 'f' ? 'duel' : 'watch'; mySide = 0; me = role === 'f' ? fighters[0] : null; opp = null;
+    mode = role === 'f' ? 'duel' : 'watch'; mySide = 0; me = role === 'f' ? fighters[0] : null; opp = null; if (me && me.character !== myChar) me.build(myChar);
     fighters.forEach((f) => { f.reset(0, f.side === 0 ? 3.4 : -3.4, f.side === 0 ? 0 : Math.PI); f.wins = 0; f.remote = false; f.root.visible = role === 'f' ? f.side === 0 : false; });
     hideMenu(); $('code').textContent = c.toUpperCase();
     if (role === 'f') { room.presence({ open: c, nm: ($('name') as HTMLInputElement).value.slice(0, 16) }); banner('Waiting for an opponent', `Share the code ${c.toUpperCase()}`, 4); }
@@ -161,6 +162,11 @@ async function main() {
   // ---------- menu
   ($('name') as HTMLInputElement).value = store.get('name') ?? '';
   $('name').addEventListener('change', () => store.set('name', ($('name') as HTMLInputElement).value));
+  let myChar = store.get('char') ?? 'davud'; if (!CAST[myChar]) myChar = 'davud';
+  const charBtns = Array.from(document.querySelectorAll<HTMLElement>('[data-ch]'));
+  const showChar = () => { charBtns.forEach((b) => b.classList.toggle('on', b.dataset.ch === myChar)); const f = FIGHTERS.find((x) => x.id === myChar); $('charTitle').textContent = f ? f.title : ''; };
+  charBtns.forEach((b) => b.addEventListener('click', () => { myChar = b.dataset.ch!; store.set('char', myChar); showChar(); if (mode === 'menu') { fighters[0].build(myChar); fighters[0].reset(0, 3.4, 0); } })); showChar();
+  const otherChar = (c: string) => { const o = FIGHTERS.filter((f) => f.id !== c); return o[Math.floor(Math.random() * o.length)].id; };
   let botLevel = Number(store.get('bot') ?? 1);
   const lvBtns = Array.from(document.querySelectorAll<HTMLElement>('[data-lv]'));
   const showLv = () => lvBtns.forEach((b) => b.classList.toggle('on', Number(b.dataset.lv) === botLevel)); showLv();
@@ -169,13 +175,15 @@ async function main() {
   function showMenu() { $('menu').style.display = 'flex'; $('hud').style.opacity = '0'; }
   function startBot() {
     leaveOnline(); initAudio(); mode = 'bot'; mySide = 0; me = fighters[0]; opp = fighters[1]; bot = new Bot(botLevel);
-    fighters.forEach((f) => { f.remote = false; f.wins = 0; f.leapUsed = false; f.root.visible = true; }); opp.name = ['Recruit', 'Champion', 'Agha of the Arena'][botLevel];
+    if (me.character !== myChar) me.build(myChar); opp.build(otherChar(myChar));
+    fighters.forEach((f) => { f.remote = false; f.wins = 0; f.leapUsed = false; f.root.visible = true; }); opp.name = `${FIGHTERS.find((f) => f.id === opp!.character)?.name ?? 'Champion'} (${['recruit', 'champion', 'master'][botLevel]})`;
     round = 1; newRound(); hideMenu();
   }
   function newRound() {
     overT = -1; fx.clearStains();
     fighters.forEach((f) => f.reset(0, f.side === 0 ? 3.4 : -3.4, f.side === 0 ? 0 : Math.PI));
-    banner(`Round ${round}`, 'Fight!', 2); sfx2.gong(); excite = 0.5;
+    banner(`Round ${round}`, 'Salute, then fight', 2.2); sfx2.gong(); excite = 0.5;
+    fighters.forEach((f) => { f.saluteT = 1.5; });
   }
   $('bBot').addEventListener('click', startBot);
   $('bHost').addEventListener('click', () => { initAudio(); goOnline(Math.random().toString(36).slice(2, 6), 'f'); });
@@ -248,13 +256,13 @@ async function main() {
       for (const f of fighters) f.seen.copy(f.root.position);
       const [x, y] = fighters; x.step(1 / 30, i === 0 ? press : none, y); y.step(1 / 30, i === 0 ? press : none, x);
       frame(1 / 30, true);
-      rows.push(fighters.map((f, k) => { const o = fighters[1 - k]; const loc = f.root.worldToLocal(f.tipW.clone()); const h = o.hitTest(f.hiltW, f.tipW); const head = new THREE.Vector3(); (o as any).bones[0][0].getWorldPosition(head); return `F${k} ${f.act} t${f.actT.toFixed(2)} pos(${f.root.position.x.toFixed(3)},${f.root.position.z.toFixed(3)}) yaw ${f.root.rotation.y.toFixed(3)} hits ${h ? h.zone : '-'} oppHead(${head.x.toFixed(2)},${head.y.toFixed(2)},${head.z.toFixed(2)}) oppRoot(${o.root.position.x.toFixed(2)},${o.root.position.z.toFixed(2)})`; }).join(' | '));
+      rows.push(fighters.map((f, k) => { const o = fighters[1 - k]; const loc = f.root.worldToLocal(f.tipW.clone()); const h = o.hitTest(f.hiltW, f.tipW); const head = new THREE.Vector3(); (o as any).bones[0][0].getWorldPosition(head); const lt = f.root.worldToLocal(f.tipW.clone()); return `F${k} ${f.act} t${f.actT.toFixed(2)} tipLocal(${lt.x.toFixed(2)},${lt.y.toFixed(2)},${lt.z.toFixed(2)}) pos(${f.root.position.x.toFixed(3)},${f.root.position.z.toFixed(3)}) yaw ${f.root.rotation.y.toFixed(3)} hits ${h ? h.zone : '-'} oppHead(${head.x.toFixed(2)},${head.y.toFixed(2)},${head.z.toFixed(2)}) oppRoot(${o.root.position.x.toFixed(2)},${o.root.position.z.toFixed(2)})`; }).join(' | '));
     }
     return rows;
   };
   (window as any).__mirrorFight = (secs: number) => {
     mode = 'watch'; duel = null; bot = new Bot(1); bot2 = new Bot(1); bot.setSeed(12345); bot2.setSeed(12345);
-    fighters.forEach((f) => { f.root.visible = true; f.leapUsed = false; }); fighters[0].reset(0, 3.4, 0); fighters[1].reset(0, -3.4, Math.PI);
+    fighters.forEach((f) => { f.root.visible = true; f.leapUsed = false; if (f.character !== 'davud') f.build('davud'); }); fighters[0].reset(0, 3.4, 0); fighters[1].reset(0, -3.4, Math.PI); // same fighter on both sides
     for (let i = 0; i < secs * 30; i++) {
       frame(1 / 30, true);
       const [a, b] = fighters, pa = a.root.position, pb = b.root.position;
@@ -335,7 +343,7 @@ async function main() {
         else {
           const o = fs.find((p) => !p.sameTab) ?? null;
           if (o && o.peer !== oppPeer) { // a new opponent arrived
-            oppPeer = o.peer; mySide = mineIdx === 0 ? 0 : 1; me = fighters[mySide]; opp = fighters[1 - mySide as 0 | 1];
+            oppPeer = o.peer; mySide = mineIdx === 0 ? 0 : 1; me = fighters[mySide]; opp = fighters[1 - mySide as 0 | 1]; if (me.character !== myChar) me.build(myChar);
             fighters.forEach((f) => { f.root.visible = true; f.wins = 0; f.leapUsed = false; }); me.remote = false; seen.delete(oppPeer); round = 1; newRound();
             room?.presence({ open: null });
           }
@@ -447,7 +455,8 @@ async function main() {
   function hud(dt: number) {
     const [L, R] = me ? [me, opp] : [fighters[0], fighters[1]];
     (bars.aHp.firstElementChild as HTMLElement).style.width = `${L.hp}%`; (bars.aSt.firstElementChild as HTMLElement).style.width = `${L.st}%`;
-    $('aName').textContent = me ? (($('name') as HTMLInputElement).value || 'You') : (L.name || 'Fighter 1');
+    const nm = (f: Fighter) => FIGHTERS.find((x) => x.id === f.character)?.name ?? '';
+    $('aName').textContent = me ? (($('name') as HTMLInputElement).value || nm(L) || 'You') : (L.name || nm(L) || 'Fighter 1');
     const rv = !!R && R.root.visible; $('right').style.visibility = rv ? 'visible' : 'hidden';
     if (R && rv) { (bars.bHp.firstElementChild as HTMLElement).style.width = `${R.hp}%`; (bars.bSt.firstElementChild as HTMLElement).style.width = `${R.st}%`; $('bName').textContent = R.name || 'Opponent'; }
     $('aWins').textContent = '◆'.repeat(L.wins) + '◇'.repeat(Math.max(0, 2 - L.wins)); $('bWins').textContent = R ? '◆'.repeat(R.wins) + '◇'.repeat(Math.max(0, 2 - R.wins)) : '';

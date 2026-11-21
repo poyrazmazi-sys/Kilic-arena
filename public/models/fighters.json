@@ -1,0 +1,119 @@
+{
+ "davud": {
+  "handFix": [
+   0.7743262648582458,
+   2.2281181344396828e-08,
+   0.6327866315841675,
+   -6.903911042854816e-08
+  ],
+  "headFix": [
+   0.9999942779541016,
+   2.3870379450841028e-08,
+   0.0033787714783102274,
+   2.8441764499120836e-09
+  ],
+  "clips": [
+   "block",
+   "crouch_idle",
+   "dodge_back",
+   "dodge_side",
+   "dying_1",
+   "dying_2",
+   "hit_reaction",
+   "idle",
+   "leap",
+   "rifle_aim_idle",
+   "running",
+   "sword_slash",
+   "walking",
+   "strafe_left",
+   "strafe_right",
+   "walk_back",
+   "slash_b",
+   "slash_c",
+   "kick",
+   "dash",
+   "bow",
+   "walk_mocap",
+   "run_mocap"
+  ]
+ },
+ "lorenzo": {
+  "handFix": [
+   0.7733467221260071,
+   5.238564781961941e-08,
+   0.633983314037323,
+   -6.279793041130688e-08
+  ],
+  "headFix": [
+   0.9999851584434509,
+   -7.197224149990689e-09,
+   0.005449235439300537,
+   7.286989900379126e-10
+  ],
+  "clips": [
+   "block",
+   "crouch_idle",
+   "dodge_back",
+   "dodge_side",
+   "dying_1",
+   "dying_2",
+   "hit_reaction",
+   "idle",
+   "leap",
+   "rifle_aim_idle",
+   "running",
+   "sword_slash",
+   "walking",
+   "strafe_left",
+   "strafe_right",
+   "walk_back",
+   "slash_b",
+   "slash_c",
+   "kick",
+   "dash",
+   "bow",
+   "walk_mocap",
+   "run_mocap"
+  ]
+ },
+ "theodoros": {
+  "handFix": [
+   0.7731973528862,
+   -9.516115540009196e-08,
+   0.6341655254364014,
+   1.0913443304616521e-07
+  ],
+  "headFix": [
+   0.9999798536300659,
+   -8.537600848512739e-09,
+   0.006353994365781546,
+   -4.5915768409621194e-10
+  ],
+  "clips": [
+   "block",
+   "crouch_idle",
+   "dodge_back",
+   "dodge_side",
+   "dying_1",
+   "dying_2",
+   "hit_reaction",
+   "idle",
+   "leap",
+   "rifle_aim_idle",
+   "running",
+   "sword_slash",
+   "walking",
+   "strafe_left",
+   "strafe_right",
+   "walk_back",
+   "slash_b",
+   "slash_c",
+   "kick",
+   "dash",
+   "bow",
+   "walk_mocap",
+   "run_mocap"
+  ]
+ }
+}
