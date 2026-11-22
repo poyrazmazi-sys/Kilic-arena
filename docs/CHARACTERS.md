@@ -1,37 +1,34 @@
 # Fighters: how they are made
 
-All three fighters are built in Blender from scripts, so they can be rebuilt or changed at any time.
+![The three fighters](../shots/cast_lineup.jpg)
 
-| Fighter | Who | Look |
+| Fighter | Base person | Outfit (painted in texture space) |
 |---|---|---|
-| Davud | Young janissary | Red kaftan to the knee, blue trousers, yellow boots, white börk with a gold band |
-| Theodoros | Byzantine guard, older and heavier | Mail shirt over a blue tunic, conical helmet with a nose guard |
-| Lorenzo | Genoese captain, tall | Steel breastplate over a crimson doublet, red cap |
+| Davud, Janissary | Rocketbox `Male_Adult_15` | crimson broadcloth kaftan, gold frogging and hem, striped silk sash, white salvar trousers, leather sandals, embroidered cap |
+| Theodoros, Byzantine | Rocketbox `Male_Adult_05` | iron lamellar cuirass with red lacing, mail sleeves, leather pteruges, wine wool trousers, boots |
+| Lorenzo, Genoese | Rocketbox `Male_Adult_20` | navy brigandine with gilt rivets, quilted arming sleeves, parti-coloured hose, hood, boots |
 
 ## Pipeline
 
-1. `blender/build_cast.py` builds the bodies with **MPFB** (MakeHuman for Blender). It sets build, age and muscle per fighter, shapes the face (nose, chin, head shape), adds MPFB's Mixamo-compatible skeleton, and makes the clothes from each body's own surface so they bend exactly with it.
-2. `blender/build_characters.py --preview` builds the Mixamo knight's clip library and the hand-built moves (block, dodges, leap) from motion-capture poses.
-3. `blender/retarget.py` moves every clip onto each fighter. It also brings in real motion capture from the Bandai Namco dataset: sidesteps, walking backwards, two slashes, a kick, a dash and a bow. It exports `public/models/fighter_<name>.glb`.
-4. `python3 tools/pack.py` packs the models for the website.
+1. `python blender/build_rocketbox.py` (Blender as a Python module)
+   - imports each Rocketbox FBX, bakes the centimetre scale into the data, points the head straight up and the hands at the middle finger, parents thighs to the pelvis and collarbones to the chest, and renames the 3ds Max Biped bones to Mixamo names (`Bip01 L UpperArm` becomes `mixamorig:LeftArm`; the 28 facial bones become `face:*`)
+   - rasterises every triangle into texture space with its body part (from the skin weights) and its rest-pose 3D position, so garments can be cut by height and side
+   - re-dresses the photographed modern clothes: the fold and seam shading of the photo is kept, the cloth colour and weave are replaced, and procedural lamellae, mail rings, rivets and quilting add their own normal-map relief
+   - writes colour, normal and an occlusion-roughness-metal map whose red channel is a skin mask for the game's skin shader
+   - `--render` makes Cycles previews; otherwise it saves `blender/cast_rb.blend`
+2. `python blender/retarget.py --cast cast_rb.blend` moves the 23 clips (Mixamo moves, the hand-built block, dodges and leap, and the Bandai mocap) onto each fighter and exports `public/models/fighter_<id>.glb`
+3. `python3 tools/pack.py` packs the GLBs as base64 JSON for the static hosts
 
-The retargeter turns each target bone to point the way the source's rest pose does, keeping its own twist, then follows the source's world rotation with that fixed offset. The hips follow the source's travel, scaled by leg length. It works between skeletons with different rest poses and bone rolls.
+## In the game (`arena/fighter.ts`)
 
-## Setup (once per machine)
+- Skin: light wraps past the terminator with red travelling furthest (scattering under the skin) and a second, tighter specular lobe for the oily layer. Cloth gets a soft sheen at grazing angles.
+- Hair cards (Theodoros) use alpha test with alpha to coverage.
+- Faces are alive: they blink every 2 to 6 seconds, the eyes find the opponent's eyes, struck fighters grimace (brows knit, lids squeeze, mouth corners pull), heavy swings and the leap bare the teeth, the jaw moves with breathing and the eyes roll back on death.
 
-- Blender as a Python module (`pip install bpy`, Python 3.13).
-- MPFB: clone `https://github.com/makehumancommunity/mpfb2`, zip `src/mpfb`, and install it with `bpy.ops.extensions.package_install_files(..., repo='user_default', enable_on_install=True)`.
-- Bandai Namco dataset: clone `https://github.com/BandaiNamcoResearchInc/Bandai-Namco-Research-Motiondataset`, and point the `BANDAI` environment variable at its `dataset/Bandai-Namco-Research-Motiondataset-1/data` folder.
+## Licences
 
-## Licences and credits
+- Microsoft Rocketbox avatars: MIT, Copyright (c) 2020 Microsoft. The notice ships with the game in `public/licenses/ROCKETBOX-LICENSE.txt` and is linked from the menu.
+- Bandai Namco Research Motion Dataset: CC BY-NC 4.0 (non-commercial). Replace these clips before any commercial release.
+- Mixamo animations: Adobe's Mixamo terms.
 
-- **MPFB**: the code is GPL, and the generated characters and bundled assets are **CC0**, free for any use.
-- **Bandai Namco Research Motion Dataset**: **CC BY-NC 4.0**. Credit is required (shown in the game menu), and it may **not be used commercially**. If the game is ever sold, these clips (`strafe_left`, `strafe_right`, `walk_back`, `slash_b`, `slash_c`, `kick`, `dash`, `bow`, `walk_mocap`, `run_mocap`) must be replaced.
-- **Mixamo** animations and the knight: Adobe's Mixamo terms.
-
-## Known gaps
-
-- The clothes are fitted shells, closer to tights than loose fabric. Folds, cloth simulation or proper garment models would add a lot.
-- There are no eyebrows, eyelashes or beards yet. The moustache was removed until it can be placed properly.
-- Skin is a plain material. MPFB's layered skin uses Blender nodes that don't export to the web, so it needs baking.
-- The old knight model is still downloaded once, as the reference for how the sword sits in the hand. The grip could be precomputed instead.
+The previous MPFB (MakeHuman) cast is still buildable with `blender/build_cast.py` and `blender/retarget.py` without `--cast`.

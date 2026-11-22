@@ -1,10 +1,10 @@
 // Runs the arena fight simulator: node tools/simulate.mjs ROUNDS LEVEL_A LEVEL_B
 import { createRequire } from 'module';
-const { chromium } = createRequire(import.meta.url)(process.env.PW);
+const { chromium } = createRequire(import.meta.url)(process.env.PW ?? 'playwright');
 const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 const page = await browser.newPage({ viewport: { width: 160, height: 90 } });
 page.on('pageerror', (e) => console.log('PAGEERR', e.message.slice(0, 300)));
-await page.goto('http://127.0.0.1:5174/?shot=1' + (process.env.SWAPLOOKS ? '&swaplooks=1' : '') + (process.env.SAMELOOKS ? '&samelooks=1' : ''));
+await page.goto(`http://127.0.0.1:${process.env.PORT ?? 5174}/?shot=1` + (process.env.SWAPLOOKS ? '&swaplooks=1' : '') + (process.env.SAMELOOKS ? '&samelooks=1' : ''));
 await page.waitForFunction(() => window.__ready === true, null, { timeout: 240000 });
 if (process.env.REV) await page.evaluate(() => { window.__rev = true; });
 if (process.env.SWAPBOTS) await page.evaluate(() => { window.__swapBots = true; });

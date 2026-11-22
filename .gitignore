@@ -4,3 +4,6 @@ dist
 assets_src
 janissary-1453-source.zip
 dist-arena
+blender/*.blend1
+blender/tex/
+blender/cast_rb_animated.blend

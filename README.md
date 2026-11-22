@@ -17,3 +17,14 @@ npm run build:arena    # production build in dist-arena/
 ```
 
 The earlier first-person prototype, Janissary: 1453, lives in `src/` and `index.html` (`npm run dev`).
+
+## Fighters and realism
+
+- How the fighters are built (Rocketbox avatars re-dressed in Blender, retargeted mocap): [docs/CHARACTERS.md](docs/CHARACTERS.md)
+- What it takes to reach Call of Duty level realism, and the roadmap: [docs/REALISM_ANALYSIS.md](docs/REALISM_ANALYSIS.md)
+
+## Credits
+
+- Fighters: Microsoft Rocketbox avatars, MIT licence, Copyright (c) 2020 Microsoft ([notice](public/licenses/ROCKETBOX-LICENSE.txt))
+- Motion: Mixamo; Bandai Namco Research Motion Dataset (CC BY-NC 4.0, non-commercial)
+- Textures and skies: Poly Haven (CC0)

@@ -362,6 +362,7 @@ async function main() {
     for (const f of fighters) if (f.remote) f.follow(dt);
     // --- the wall stops you
     for (const f of fighters) { const p = f.root.position; const l = Math.hypot(p.x, p.z); if (l > RING) { p.x *= RING / l; p.z *= RING / l; const n = new THREE.Vector3(p.x, 0, p.z).normalize(); const vn = f.vel.dot(n); if (vn > 0) f.vel.addScaledVector(n, -vn); const kn = f.knock.dot(n); if (kn > 0) f.knock.addScaledVector(n, -kn * 1.4); } }
+    for (const f of fighters) { const o = fighters[1 - f.side]; f.lookAt = o.root.visible ? o.eyes(f.lookAt ?? new THREE.Vector3()) : null; }
     for (const f of fighters) if (f.root.visible) f.animate(dt);
     // --- solid bodies: torso, hips, head and legs of one person never pass through the other's
     { const [a, b] = fighters;
@@ -471,6 +472,7 @@ async function main() {
 
   addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight); });
   $('loading').style.display = 'none'; showMenu(); $('bResume').style.display = 'none';
+  if (shot && q.has('nomenu')) hideMenu();
   if (shot && q.get('start') === 'bot') { if (q.has('lv')) botLevel = Number(q.get('lv')); startBot(); }
   if (shot && q.has('watchdemo')) { startBot(); me = null; mode = 'watch'; bot = new Bot(2); bot2 = new Bot(1); hideMenu(); }
   function loop() {

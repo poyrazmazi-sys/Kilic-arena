@@ -19,8 +19,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BANDAI = os.environ.get('BANDAI', '/home/user/bandainamcoresearchinc/bandai-namco-research-motiondataset/dataset/Bandai-Namco-Research-Motiondataset-1/data')
 OUT = os.path.join(ROOT, 'public', 'models')
 FAST = '--fast' in sys.argv
+CAST_FILE = sys.argv[sys.argv.index('--cast') + 1] if '--cast' in sys.argv else 'cast.blend'
 
-bpy.ops.wm.open_mainfile(filepath=os.path.join(ROOT, 'blender', 'cast.blend'))
+bpy.ops.wm.open_mainfile(filepath=os.path.join(ROOT, 'blender', CAST_FILE))
+bpy.context.preferences.edit.use_global_undo = False
 sc = bpy.context.scene
 sc.render.fps = 30; sc.render.fps_base = 1  # all motion was recorded at 30 frames a second
 rigs = {o.name[:-4]: o for o in bpy.data.objects if o.type == 'ARMATURE' and o.name.endswith('_rig')}
@@ -174,7 +176,7 @@ for name, rig in rigs.items():
     for t in rig.animation_data.nla_tracks: t.mute = False
     path = os.path.join(OUT, f'fighter_{name}.glb')
     bpy.ops.export_scene.gltf(filepath=path, use_selection=True, export_yup=True, export_animations=True, export_animation_mode='NLA_TRACKS',
-                              export_force_sampling=True, export_optimize_animation_size=True, export_skins=True, export_apply=True, export_frame_range=False, export_image_format='JPEG')
+                              export_force_sampling=True, export_optimize_animation_size=True, export_skins=True, export_apply=True, export_frame_range=False, export_image_format='AUTO')
     print('exported', name, os.path.getsize(path) // 1024, 'KB')
 json.dump(manifest, open(os.path.join(OUT, 'fighters.json'), 'w'), indent=1)
-bpy.ops.wm.save_as_mainfile(filepath=os.path.join(ROOT, 'blender', 'cast_animated.blend'))
+bpy.ops.wm.save_as_mainfile(filepath=os.path.join(ROOT, 'blender', CAST_FILE.replace('.blend', '_animated.blend')))

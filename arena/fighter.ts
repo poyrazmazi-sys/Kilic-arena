@@ -138,6 +138,97 @@ function segSeg(p1: THREE.Vector3, q1: THREE.Vector3, p2: THREE.Vector3, q2: THR
   return c1.distanceTo(c2);
 }
 
+/** Skin: light wraps past the terminator, red furthest (light scattered under the skin), plus a second, tighter
+ *  specular lobe for the oily top layer. The skin mask is the red channel of the occlusion-roughness-metal map. */
+const DIFFUSE_LINE = 'reflectedLight.directDiffuse += irradiance * diffuseBRDF * ( 1.0 - F );';
+const SKIN_PARS = THREE.ShaderChunk.lights_physical_pars_fragment.replace(DIFFUSE_LINE, `
+	vec3 skinIrr = irradiance;
+	if ( skinMask > 0.0 ) {
+		float nlRaw = dot( geometryNormal, directLight.direction );
+		vec3 w = vec3( 0.55, 0.24, 0.13 );
+		skinIrr = mix( irradiance, saturate( ( vec3( nlRaw ) + w ) / ( 1.0 + w ) ) * directLight.color, skinMask );
+		PhysicalMaterial oily = material; oily.roughness = max( material.roughness * 0.5, 0.16 );
+		reflectedLight.directSpecular += skinMask * 0.22 * irradiance * BRDF_GGX( directLight.direction, geometryViewDir, geometryNormal, oily );
+	} else {
+		// cloth: a soft sheen where the surface turns away from the eye
+		float rim = pow( 1.0 - saturate( dot( geometryNormal, geometryViewDir ) ), 4.0 );
+		reflectedLight.directDiffuse += rim * 0.35 * irradiance * material.diffuseColor;
+	}
+	reflectedLight.directDiffuse += skinIrr * diffuseBRDF * ( 1.0 - F );`);
+if (!THREE.ShaderChunk.lights_physical_pars_fragment.includes(DIFFUSE_LINE)) console.warn('skin shader: three.js lighting chunk changed, skin falls back to standard shading');
+function dressMaterial(m: THREE.MeshStandardMaterial) {
+  if (/_hair$/.test(m.name)) { m.transparent = false; m.alphaTest = 0.42; m.alphaToCoverage = true; m.depthWrite = true; m.side = THREE.DoubleSide; return; }
+  if (!/_(head|body)$/.test(m.name) || !m.roughnessMap) return;
+  m.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <lights_physical_pars_fragment>', 'float skinMask = 0.0;\n' + SKIN_PARS)
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n#ifdef USE_ROUGHNESSMAP\n\tskinMask = texelRoughness.r;\n#endif');
+  };
+  m.customProgramCacheKey = () => 'skin1';
+}
+
+/** The face: Rocketbox heads carry facial bones (lids, brows, jaw, lips, eyes). They blink, look at the
+ *  opponent, grimace when struck and bare their teeth with effort. Offsets are in the model's own frame. */
+class Face {
+  private b: Record<string, { o: THREE.Object3D; p0: THREE.Vector3; q0: THREE.Quaternion; m2p: THREE.Quaternion; s: number }> = {};
+  private blinkT = 2; private blink = 0; private pain = 0; private effort = 0; private dead = 0; private t = Math.random() * 10;
+  private eyeF: Record<string, THREE.Vector3> = {};
+  static make(model: THREE.Object3D) { return model.getObjectByName('faceREyeBlinkTop') ? new Face(model) : null; }
+  constructor(private model: THREE.Object3D) {
+    model.updateMatrixWorld(true);
+    const mq = model.getWorldQuaternion(new THREE.Quaternion());
+    model.traverse((o) => {
+      if (!o.name.startsWith('face') || !o.parent) return;
+      const pq = o.parent.getWorldQuaternion(new THREE.Quaternion()), s = o.parent.getWorldScale(new THREE.Vector3()).x / model.getWorldScale(new THREE.Vector3()).x;
+      this.b[o.name.slice(4)] = { o, p0: o.position.clone(), q0: o.quaternion.clone(), m2p: pq.invert().multiply(mq), s };
+    });
+    for (const e of ['REye', 'LEye']) { const x = this.b[e]; if (!x) continue; const wq = x.o.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(mq); this.eyeF[e] = new THREE.Vector3(0, 0, 1).applyQuaternion(wq); }
+  }
+  private move(n: string, x: number, y: number, z: number) {
+    const k = this.b[n]; if (!k) return;
+    k.o.position.copy(k.p0).add(new THREE.Vector3(x, y, z).applyQuaternion(k.m2p).divideScalar(k.s));
+  }
+  private turn(n: string, ax: THREE.Vector3, ang: number) {
+    const k = this.b[n]; if (!k) return;
+    k.o.quaternion.copy(new THREE.Quaternion().setFromAxisAngle(ax.clone().applyQuaternion(k.m2p).normalize(), ang)).multiply(k.q0);
+  }
+  update(dt: number, act: Act, lookAt: THREE.Vector3 | null) {
+    this.t += dt;
+    const hurt = act === 'hit' || act === 'stun' || act === 'recoil';
+    this.pain += ((hurt ? 1 : 0) - this.pain) * Math.min(1, dt * (hurt ? 14 : 2.5));
+    const strain = act === 'heavy' || act === 'leap';
+    this.effort += ((strain ? 1 : 0) - this.effort) * Math.min(1, dt * (strain ? 10 : 4));
+    this.dead += ((act === 'dead' ? 1 : 0) - this.dead) * Math.min(1, dt * 3);
+    this.blinkT -= dt;
+    if (this.blinkT <= 0) { this.blink = 1; this.blinkT = 1.8 + Math.random() * 4.2; }
+    this.blink = Math.max(0, this.blink - dt / 0.14);
+    const lid = Math.max(Math.sin(this.blink * Math.PI), this.pain * 0.55, this.effort * 0.3, 0.55 * this.dead);
+    for (const s of ['R', 'L']) {
+      const top = this.b[s + 'EyeBlinkTop'], bot = this.b[s + 'EyeBlinkBottom'];
+      if (top && bot) { const gap = top.p0.distanceTo(bot.p0) * top.s; this.move(s + 'EyeBlinkTop', 0, -gap * 0.78 * lid, 0); this.move(s + 'EyeBlinkBottom', 0, gap * 0.12 * lid, 0); }
+      const side = s === 'L' ? 1 : -1, frown = Math.max(this.pain, this.effort * 0.8);
+      this.move(s + 'InnerEyebrow', -side * 0.003 * frown, -0.004 * frown + 0.002 * this.pain, 0);
+      this.move(s + 'OuterEyebrow', 0, 0.002 * this.pain, 0);
+      this.move(s + 'MouthCorner', side * 0.004 * (this.pain + this.effort), -0.003 * this.pain + 0.002 * this.effort, -0.002 * this.effort);
+      this.move(s + 'Upperlip', 0, 0.002 * (this.pain + this.effort), 0);
+      this.move(s + 'Cheek', 0, 0.003 * (this.pain + this.effort * 0.6), 0.001);
+    }
+    const breath = 0.5 + 0.5 * Math.sin(this.t * 1.7);
+    this.turn('MJaw', new THREE.Vector3(1, 0, 0), 0.05 * this.pain + 0.16 * this.effort + 0.2 * this.dead + 0.015 * breath);
+    // eyes find the opponent's eyes (within what eyes can turn), and roll back when dying
+    for (const e of ['REye', 'LEye']) {
+      const k = this.b[e], f = this.eyeF[e]; if (!k || !f) continue;
+      if (!lookAt || this.dead > 0.5) { k.o.quaternion.copy(k.q0); continue; }
+      const ew = k.o.getWorldPosition(new THREE.Vector3()), want = lookAt.clone().sub(ew).normalize();
+      const pq = k.o.parent!.getWorldQuaternion(new THREE.Quaternion()).invert();
+      const fp = f.clone().applyQuaternion(k.q0), wp = want.applyQuaternion(pq);
+      const ang = Math.min(fp.angleTo(wp), 0.42); if (ang < 1e-4) { k.o.quaternion.copy(k.q0); continue; }
+      const ax = fp.clone().cross(wp).normalize();
+      k.o.quaternion.copy(new THREE.Quaternion().setFromAxisAngle(ax, ang)).multiply(k.q0);
+    }
+  }
+}
+
 export class Fighter {
   root = new THREE.Group(); model!: THREE.Object3D; mixer!: THREE.AnimationMixer;
   private actions: Record<string, THREE.AnimationAction> = {}; private cur = ''; private bones: THREE.Object3D[][] = [];
@@ -151,6 +242,9 @@ export class Fighter {
   readonly hiltW = new THREE.Vector3(); readonly tipW = new THREE.Vector3();
 
   character = ''; clips: Record<string, THREE.AnimationClip> = {};
+  private face: Face | null = null;
+  /** where this fighter's eyes look (the opponent's eyes), set each frame by the game */
+  lookAt: THREE.Vector3 | null = null;
   constructor(public side: 0 | 1, character = side === 0 ? 'davud' : 'theodoros') {
     this.build(character);
   }
@@ -163,7 +257,7 @@ export class Fighter {
     this.model = cloneSkinned(proto);
     const side = this.side;
     const tint = !c.knight ? 0xffffff : side === 0 ? 0xffd2c8 : 0xb8d8c8;
-    this.model.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) { const c = (m.material as THREE.MeshStandardMaterial).clone(); if (tint !== 0xffffff) c.color.set(tint); c.envMapIntensity = 1.1; m.material = c; } });
+    this.model.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) { const c = (m.material as THREE.MeshStandardMaterial).clone(); if (tint !== 0xffffff) c.color.set(tint); c.envMapIntensity = 1.1; dressMaterial(c); m.material = c; } });
     this.model.scale.setScalar(baseScale); this.model.rotation.y = Math.PI;
     this.root.add(this.model);
     const get = (n: string) => this.model.getObjectByName('mixamorig' + n)!;
@@ -192,6 +286,7 @@ export class Fighter {
     }
     hat.traverse((o) => { (o as THREE.Mesh).castShadow = true; }); head.add(hat); this.hat = hat;
     } else this.hat = null;
+    this.face = Face.make(this.model);
     this.mixer = new THREE.AnimationMixer(this.model);
     for (const n in this.clips) this.actions[n] = this.mixer.clipAction(this.clips[n]);
     this.play('idle', 0);
@@ -328,6 +423,7 @@ export class Fighter {
     this.model.rotation.y = Math.PI + this.animYaw;
     // dodge: low, leaning into the direction of travel
     this.mixer.update(dt);
+    if (this.face) { this.root.updateMatrixWorld(true); this.face.update(dt, this.act, this.lookAt); }
     this.root.updateMatrixWorld(true);
     this.blade.updateMatrixWorld(true);
     this.hiltW.set(0, 0.12, 0); this.blade.localToWorld(this.hiltW);
